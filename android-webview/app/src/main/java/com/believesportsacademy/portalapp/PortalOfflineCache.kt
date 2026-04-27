@@ -24,8 +24,6 @@ internal object PortalOfflineCache {
                 capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED)
         } catch (_: SecurityException) {
             false
-        } catch (_: RuntimeException) {
-            false
         }
     }
 
