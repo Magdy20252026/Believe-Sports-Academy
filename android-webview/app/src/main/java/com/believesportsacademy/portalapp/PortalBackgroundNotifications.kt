@@ -5,6 +5,7 @@ import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.graphics.BitmapFactory
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -26,13 +27,18 @@ internal object PortalBackgroundNotifications {
 
     private const val PREFS_NAME = "portal_background_notifications"
     private const val ACTIVE_SESSION_KEY = "active_session_key"
-    // Polling is rescheduled for roughly every 15 minutes after each poll completes to balance
-    // delivery after app closure with battery use. Actual delivery may be delayed further by
+    // Polling is rescheduled for roughly every 5 minutes after each poll completes to improve
+    // delivery after app closure while still respecting Android background limits. Actual
+    // delivery may be delayed further by
     // Android idle/doze/background execution policies.
-    private val POLL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(15)
+    private val POLL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5)
     private const val POLL_ALARM_REQUEST_CODE = 4102
 
     fun schedule(context: Context) {
+        if (!hasActivePortalSession(context)) {
+            cancelSchedule(context)
+            return
+        }
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         val triggerAtMillis = System.currentTimeMillis() + POLL_INTERVAL_MS
         val pendingIntent = buildPollPendingIntent(context)
@@ -68,6 +74,7 @@ internal object PortalBackgroundNotifications {
 
     fun clearPortalState(context: Context) {
         prefs(context).edit().remove(ACTIVE_SESSION_KEY).apply()
+        cancelSchedule(context)
     }
 
     fun flushCookies() {
@@ -86,7 +93,7 @@ internal object PortalBackgroundNotifications {
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
             context.getString(R.string.notification_channel_name),
-            NotificationManager.IMPORTANCE_DEFAULT
+            NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = context.getString(R.string.notification_channel_description)
         }
@@ -105,6 +112,9 @@ internal object PortalBackgroundNotifications {
         }
 
         ensureNotificationChannel(context)
+        val appName = context.getString(R.string.app_name)
+        val expandedText = buildNotificationBody(safeTitle, safeMessage)
+        val logoBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.app_logo)
 
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
@@ -117,11 +127,20 @@ internal object PortalBackgroundNotifications {
         )
 
         val notification = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(safeTitle)
-            .setContentText(safeMessage)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(safeMessage))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setSmallIcon(R.drawable.ic_stat_portal)
+            .setLargeIcon(logoBitmap)
+            .setColor(ContextCompat.getColor(context, R.color.portal_primary))
+            .setContentTitle(appName)
+            .setContentText(expandedText.replace("\n", " • "))
+            .setSubText(safeTitle)
+            .setStyle(
+                NotificationCompat.BigTextStyle()
+                    .setBigContentTitle(appName)
+                    .bigText(expandedText)
+                    .setSummaryText(safeTitle)
+            )
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()
@@ -216,9 +235,23 @@ internal object PortalBackgroundNotifications {
         )
     }
 
+    private fun cancelSchedule(context: Context) {
+        val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
+        alarmManager.cancel(buildPollPendingIntent(context))
+    }
+
     private fun canPostNotifications(context: Context): Boolean {
         return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun buildNotificationBody(title: String, message: String): String {
+        val normalizedTitle = title.trim()
+        val normalizedMessage = message.trim()
+        if (normalizedTitle.isEmpty()) {
+            return normalizedMessage
+        }
+        return "$normalizedTitle\n$normalizedMessage".trim()
     }
 
     private fun deliveredKey(sessionKey: String): String = "delivered_$sessionKey"

@@ -942,17 +942,32 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
 (function () {
     var tabBtns = document.querySelectorAll(".portal-tab-btn");
     var tabPanes = document.querySelectorAll(".portal-tab-pane");
+    var tabStateKey = "trainer-portal-active-tab-<?php echo (int)$trainerId; ?>";
+
+    function activateTab(target) {
+        if (!target) return;
+        tabBtns.forEach(function (b) { b.classList.remove("active"); });
+        tabPanes.forEach(function (p) { p.classList.remove("active"); });
+        var nextBtn = document.querySelector('.portal-tab-btn[data-tab="' + target + '"]');
+        var nextPane = document.getElementById("tab-" + target);
+        if (!nextBtn || !nextPane) return;
+        nextBtn.classList.add("active");
+        nextPane.classList.add("active");
+        try {
+            sessionStorage.setItem(tabStateKey, target);
+        } catch (e) {}
+    }
 
     tabBtns.forEach(function (btn) {
         btn.addEventListener("click", function () {
-            var target = btn.getAttribute("data-tab");
-            tabBtns.forEach(function (b) { b.classList.remove("active"); });
-            tabPanes.forEach(function (p) { p.classList.remove("active"); });
-            btn.classList.add("active");
-            var pane = document.getElementById("tab-" + target);
-            if (pane) pane.classList.add("active");
+            activateTab(btn.getAttribute("data-tab"));
         });
     });
+
+    try {
+        var activeBtn = document.querySelector(".portal-tab-btn.active");
+        activateTab(sessionStorage.getItem(tabStateKey) || (activeBtn ? activeBtn.getAttribute("data-tab") : "") || "home");
+    } catch (e) {}
 })();
 
 (function () {
@@ -975,30 +990,19 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
         "title" => (string)$latestNotification["title"],
         "message" => (string)$latestNotification["message"],
     ] : null, JSON_UNESCAPED_UNICODE); ?>;
-    if (window.AndroidBridge && typeof window.AndroidBridge.syncPortalState === "function") {
-        window.AndroidBridge.syncPortalState(
-            "trainer:<?php echo (int)$trainerId; ?>",
-            latestNotification && latestNotification.id ? String(latestNotification.id) : ""
-        );
-    }
-    if (
-        latestNotification &&
-        latestNotification.id &&
-        window.AndroidBridge &&
-        typeof window.AndroidBridge.showNotification === "function"
-    ) {
-        var storageKey = "trainer-portal-last-notification-<?php echo (int)$trainerId; ?>";
-        var lastSeenId = parseInt(sessionStorage.getItem(storageKey) || "0", 10);
-        if (!lastSeenId || latestNotification.id > lastSeenId) {
-            sessionStorage.setItem(storageKey, String(latestNotification.id));
-            window.AndroidBridge.showNotification(
-                latestNotification.title || "📣 إشعار جديد",
-                latestNotification.message || ""
-            );
-        }
-    }
+    window.__PORTAL_LIVE_NOTIFICATIONS__ = {
+        endpoint: "trainer_portal_notifications_feed.php",
+        sessionKey: "trainer:<?php echo (int)$trainerId; ?>",
+        latestNotification: latestNotification,
+        storageKey: "trainer-portal-last-notification-<?php echo (int)$trainerId; ?>",
+        notificationTab: "notifications",
+        showInitialLatest: true,
+        pollIntervalMs: 10000,
+        reloadDelayMs: 1200
+    };
 })();
 </script>
+<script src="assets/js/portal_live_notifications.js"></script>
 <script>
 window.__PORTAL_SESSION_GUARD__ = {
     key: "trainer-portal",

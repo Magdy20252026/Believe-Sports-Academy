@@ -1108,56 +1108,23 @@ window.__PORTAL_SESSION_GUARD__ = {
         'title' => (string)$latestNotification['title'],
         'message' => (string)$latestNotification['message'],
     ] : null, JSON_UNESCAPED_UNICODE); ?>;
-    if (window.AndroidBridge && typeof window.AndroidBridge.syncPortalState === 'function') {
-        window.AndroidBridge.syncPortalState(
-            'player:<?php echo (int)$playerId; ?>',
-            latestNotification && latestNotification.id ? String(latestNotification.id) : ''
-        );
-    }
-    var liveNotice = document.getElementById('ppLiveNotice');
-    var liveNoticeTitle = document.getElementById('ppLiveNoticeTitle');
-    var liveNoticeMessage = document.getElementById('ppLiveNoticeMessage');
-    var liveNoticeClose = document.getElementById('ppLiveNoticeClose');
-    var liveNoticeTimer = null;
-    var LIVE_NOTICE_DURATION_MS = 8000;
-
-    function hideLiveNotice() {
-        if (!liveNotice) return;
-        liveNotice.classList.remove('show');
-    }
-
-    function showLiveNotice(notification) {
-        if (!liveNotice || !notification || !notification.id) return;
-        if (liveNoticeTimer) {
-            clearTimeout(liveNoticeTimer);
-        }
-        liveNoticeTitle.textContent = notification.title || '📣 إشعار جديد';
-        liveNoticeMessage.textContent = notification.message || '';
-        liveNotice.classList.add('show');
-        if (window.AndroidBridge && typeof window.AndroidBridge.showNotification === 'function') {
-            window.AndroidBridge.showNotification(
-                liveNoticeTitle.textContent,
-                liveNoticeMessage.textContent
-            );
-        }
-        liveNoticeTimer = setTimeout(hideLiveNotice, LIVE_NOTICE_DURATION_MS);
-    }
-
-    if (liveNoticeClose) {
-        liveNoticeClose.addEventListener('click', hideLiveNotice);
-    }
-
-    if (latestNotification && latestNotification.id) {
-        var storageKey = 'player-portal-last-notification-<?php echo (int)$playerId; ?>';
-        var lastSeenId = parseInt(sessionStorage.getItem(storageKey) || '0', 10);
-        if (!lastSeenId) {
-            sessionStorage.setItem(storageKey, String(latestNotification.id));
-            showLiveNotice(latestNotification);
-        } else if (latestNotification.id > lastSeenId) {
-            sessionStorage.setItem(storageKey, String(latestNotification.id));
-            showLiveNotice(latestNotification);
-        }
-    }
+    window.__PORTAL_LIVE_NOTIFICATIONS__ = {
+        endpoint: 'player_portal_notifications_feed.php',
+        sessionKey: 'player:<?php echo (int)$playerId; ?>',
+        latestNotification: latestNotification,
+        storageKey: 'player-portal-last-notification-<?php echo (int)$playerId; ?>',
+        noticeLinkHref: '?section=home',
+        notice: {
+            containerId: 'ppLiveNotice',
+            titleId: 'ppLiveNoticeTitle',
+            messageId: 'ppLiveNoticeMessage',
+            closeId: 'ppLiveNoticeClose',
+            actionSelector: '.pp-live-notice-btn'
+        },
+        showInitialLatest: true,
+        pollIntervalMs: 10000,
+        reloadDelayMs: 1200
+    };
 })();
 
 function ppOpenOrder(productId, productName, unitPrice) {
@@ -1177,5 +1144,6 @@ function ppCloseOrder() {
     document.getElementById('ppOrderModal').classList.remove('show');
 }
 </script>
+<script src="assets/js/portal_live_notifications.js"></script>
 </body>
 </html>
