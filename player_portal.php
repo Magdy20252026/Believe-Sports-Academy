@@ -357,11 +357,11 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 <link rel="stylesheet" href="assets/css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
-.pp-root { min-height:100vh; display:flex; flex-direction:column; }
+.pp-root { --pp-topbar-height:64px; min-height:100vh; display:flex; flex-direction:column; }
 .pp-topbar {
     background:var(--bg-secondary); border-bottom:1px solid var(--border);
     padding:0 20px; display:flex; align-items:center; justify-content:space-between;
-    gap:12px; min-height:64px; position:sticky; top:0; z-index:200;
+    gap:12px; min-height:var(--pp-topbar-height); position:sticky; top:0; z-index:200;
     box-shadow:0 2px 12px rgba(0,0,0,0.07);
 }
 .pp-topbar-l { display:flex; align-items:center; gap:10px; }
@@ -395,12 +395,17 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 }
 .pp-logout:hover { background:rgba(220,38,38,.2); }
 .pp-body { flex:1; display:flex; }
+.pp-sidebar-overlay {
+    position:fixed; inset:var(--pp-topbar-height) 0 0 0; background:rgba(15,23,42,.42);
+    opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:140;
+}
+.pp-sidebar-overlay.show { opacity:1; pointer-events:auto; }
 
 .pp-sidebar {
     width:260px; background:var(--bg-secondary); border-left:1px solid var(--border);
     padding:18px 12px; display:flex; flex-direction:column; gap:6px;
     transition: width .25s ease, padding .25s ease, transform .25s ease;
-    position:sticky; top:64px; height:calc(100vh - 64px); overflow-y:auto;
+    position:sticky; top:var(--pp-topbar-height); height:calc(100vh - var(--pp-topbar-height)); overflow-y:auto;
 }
 .pp-sidebar.collapsed { width:64px; padding:18px 6px; }
 .pp-sidebar.collapsed .pp-side-label { display:none; }
@@ -608,7 +613,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 
 @media (max-width: 900px) {
     .pp-sidebar {
-        position:fixed; top:64px; right:0; height:calc(100vh - 64px); z-index:150;
+        position:fixed; top:var(--pp-topbar-height); right:0; height:calc(100vh - var(--pp-topbar-height)); z-index:150;
         transform: translateX(100%); width:240px;
     }
     .pp-sidebar.show { transform: translateX(0); box-shadow:-6px 0 18px rgba(0,0,0,.18); }
@@ -620,6 +625,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
     .pp-welcome-title { font-size:1.15rem; }
     .pp-welcome-logo { width:60px; height:60px; }
     .pp-live-notice { top:76px; left:12px; width:calc(100vw - 24px); }
+    body.pp-mobile-menu-open { overflow:hidden; }
 }
 @media (max-width: 600px) {
     .pp-topbar { padding:0 12px; }
@@ -633,7 +639,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 <div class="pp-root">
     <div class="pp-topbar">
         <div class="pp-topbar-l">
-            <button class="pp-burger" id="ppBurger" type="button" aria-label="القائمة">☰</button>
+            <button class="pp-burger" id="ppBurger" type="button" aria-label="القائمة" aria-controls="ppSidebar">☰</button>
             <div class="pp-brand">
                 <img src="<?php echo pportEsc($siteLogo); ?>" alt="logo">
                 <div>
@@ -662,6 +668,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
     </div>
 
     <div class="pp-body">
+        <div class="pp-sidebar-overlay" id="ppSidebarOverlay"></div>
         <aside class="pp-sidebar" id="ppSidebar">
             <a href="?section=home" class="pp-side-item <?php echo $activeSection === 'home' ? 'active' : ''; ?>">
                 <span class="pp-side-icon">🏠</span><span class="pp-side-label">الرئيسية</span>
@@ -985,17 +992,89 @@ window.__PORTAL_SESSION_GUARD__ = {
 <script src="assets/js/script.js"></script>
 <script>
 (function() {
+    var MOBILE_BREAKPOINT = '900px';
     var burger = document.getElementById('ppBurger');
     var sidebar = document.getElementById('ppSidebar');
+    var sidebarOverlay = document.getElementById('ppSidebarOverlay');
+    var sidebarLinks = sidebar ? sidebar.querySelectorAll('.pp-side-item') : [];
+    var mobileMq = window.matchMedia('(max-width: ' + MOBILE_BREAKPOINT + ')');
+
+    function openMobileSidebar() {
+        if (!sidebar) return;
+        sidebar.classList.remove('collapsed');
+        sidebar.classList.add('show');
+        sidebar.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('pp-mobile-menu-open');
+        if (sidebarOverlay) sidebarOverlay.classList.add('show');
+        if (burger) burger.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeMobileSidebar() {
+        if (!sidebar) return;
+        sidebar.classList.remove('show');
+        document.body.classList.remove('pp-mobile-menu-open');
+        if (sidebarOverlay) sidebarOverlay.classList.remove('show');
+        if (burger) burger.setAttribute('aria-expanded', 'false');
+        if (mobileMq.matches) {
+            sidebar.setAttribute('aria-hidden', 'true');
+        }
+    }
+
+    function syncDesktopSidebarState() {
+        if (!sidebar) return;
+        sidebar.classList.remove('show');
+        sidebar.removeAttribute('aria-hidden');
+        document.body.classList.remove('pp-mobile-menu-open');
+        if (sidebarOverlay) sidebarOverlay.classList.remove('show');
+        if (burger) burger.setAttribute('aria-expanded', 'false');
+    }
+
+    function syncSidebarMode() {
+        if (!sidebar) return;
+        if (mobileMq.matches) {
+            sidebar.classList.remove('collapsed');
+            closeMobileSidebar();
+        } else {
+            syncDesktopSidebarState();
+        }
+    }
+
     if (burger && sidebar) {
+        if (mobileMq.matches) {
+            sidebar.setAttribute('aria-hidden', 'true');
+        } else {
+            sidebar.removeAttribute('aria-hidden');
+        }
+        burger.setAttribute('aria-expanded', 'false');
         burger.addEventListener('click', function() {
-            if (window.matchMedia('(max-width: 900px)').matches) {
-                sidebar.classList.toggle('show');
+            if (mobileMq.matches) {
+                if (sidebar.classList.contains('show')) {
+                    closeMobileSidebar();
+                } else {
+                    openMobileSidebar();
+                }
             } else {
-                sidebar.classList.toggle('collapsed');
+                syncDesktopSidebarState();
+                burger.setAttribute('aria-expanded', sidebar.classList.toggle('collapsed') ? 'false' : 'true');
             }
         });
     }
+
+    if (sidebarOverlay) {
+        sidebarOverlay.addEventListener('click', closeMobileSidebar);
+    }
+
+    if (sidebarLinks.length > 0) {
+        sidebarLinks.forEach(function(link) {
+            link.addEventListener('click', function() {
+                if (mobileMq.matches) {
+                    closeMobileSidebar();
+                }
+            });
+        });
+    }
+
+    mobileMq.addEventListener('change', syncSidebarMode);
 
     var barcodeEl = document.getElementById('ppBarcode');
     if (barcodeEl && window.JsBarcode) {
