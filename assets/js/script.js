@@ -159,6 +159,8 @@
         parent.insertBefore(visible, originalInput);
         originalInput.removeAttribute("name");
         originalInput.removeAttribute("id");
+        originalInput.required = false;
+        originalInput.disabled = true;
         originalInput.style.display = "none";
 
         visible.addEventListener("input", function () {
