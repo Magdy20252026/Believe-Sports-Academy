@@ -601,13 +601,13 @@ function markPlayerPortalNotificationsAsRead(PDO $pdo, $playerId, array $notific
     $placeholders = [];
     $params = [];
     foreach ($notificationIds as $notificationId) {
-        $placeholders[] = "(?, ?, CURRENT_TIMESTAMP)";
+        $placeholders[] = "(?, ?)";
         $params[] = $notificationId;
         $params[] = $playerId;
     }
 
     $stmt = $pdo->prepare(
-        "INSERT INTO player_notification_reads (notification_id, player_id, read_at)
+        "INSERT INTO player_notification_reads (notification_id, player_id)
          VALUES " . implode(", ", $placeholders) . "
          ON DUPLICATE KEY UPDATE read_at = read_at"
     );
