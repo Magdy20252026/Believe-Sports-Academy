@@ -357,11 +357,11 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 <link rel="stylesheet" href="assets/css/style.css">
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 <style>
-.pp-root { min-height:100vh; display:flex; flex-direction:column; }
+.pp-root { --pp-topbar-height:64px; min-height:100vh; display:flex; flex-direction:column; }
 .pp-topbar {
     background:var(--bg-secondary); border-bottom:1px solid var(--border);
     padding:0 20px; display:flex; align-items:center; justify-content:space-between;
-    gap:12px; min-height:64px; position:sticky; top:0; z-index:200;
+    gap:12px; min-height:var(--pp-topbar-height); position:sticky; top:0; z-index:200;
     box-shadow:0 2px 12px rgba(0,0,0,0.07);
 }
 .pp-topbar-l { display:flex; align-items:center; gap:10px; }
@@ -396,7 +396,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 .pp-logout:hover { background:rgba(220,38,38,.2); }
 .pp-body { flex:1; display:flex; }
 .pp-sidebar-overlay {
-    position:fixed; inset:64px 0 0 0; background:rgba(15,23,42,.42);
+    position:fixed; inset:var(--pp-topbar-height) 0 0 0; background:rgba(15,23,42,.42);
     opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:140;
 }
 .pp-sidebar-overlay.show { opacity:1; pointer-events:auto; }
@@ -405,7 +405,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
     width:260px; background:var(--bg-secondary); border-left:1px solid var(--border);
     padding:18px 12px; display:flex; flex-direction:column; gap:6px;
     transition: width .25s ease, padding .25s ease, transform .25s ease;
-    position:sticky; top:64px; height:calc(100vh - 64px); overflow-y:auto;
+    position:sticky; top:var(--pp-topbar-height); height:calc(100vh - var(--pp-topbar-height)); overflow-y:auto;
 }
 .pp-sidebar.collapsed { width:64px; padding:18px 6px; }
 .pp-sidebar.collapsed .pp-side-label { display:none; }
@@ -613,7 +613,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 
 @media (max-width: 900px) {
     .pp-sidebar {
-        position:fixed; top:64px; right:0; height:calc(100vh - 64px); z-index:150;
+        position:fixed; top:var(--pp-topbar-height); right:0; height:calc(100vh - var(--pp-topbar-height)); z-index:150;
         transform: translateX(100%); width:240px;
     }
     .pp-sidebar.show { transform: translateX(0); box-shadow:-6px 0 18px rgba(0,0,0,.18); }
