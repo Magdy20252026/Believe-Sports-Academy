@@ -26,8 +26,9 @@ internal object PortalBackgroundNotifications {
 
     private const val PREFS_NAME = "portal_background_notifications"
     private const val ACTIVE_SESSION_KEY = "active_session_key"
-    // 15 minutes is our target polling window to balance delivery after app closure with battery use.
-    // Actual delivery may be delayed further by Android idle/doze/background execution policies.
+    // Polling is rescheduled for roughly every 15 minutes after each poll completes to balance
+    // delivery after app closure with battery use. Actual delivery may be delayed further by
+    // Android idle/doze/background execution policies.
     private val POLL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(15)
     private const val POLL_ALARM_REQUEST_CODE = 4102
 
@@ -53,10 +54,13 @@ internal object PortalBackgroundNotifications {
         }
 
         prefs(context).edit().putString(ACTIVE_SESSION_KEY, normalizedSessionKey).apply()
-        latestNotificationId?.trim()?.toIntOrNull()?.takeIf { it > 0 && canPostNotifications(context) }?.let { latestId ->
+        val latestId = latestNotificationId?.trim()?.toIntOrNull()
+        val shouldTrackLatestId = latestId != null && latestId > 0 && canPostNotifications(context)
+        if (shouldTrackLatestId) {
+            val latestDeliveredId = latestId ?: return
             val lastDelivered = prefs(context).getInt(deliveredKey(normalizedSessionKey), 0)
-            if (latestId > lastDelivered) {
-                prefs(context).edit().putInt(deliveredKey(normalizedSessionKey), latestId).apply()
+            if (latestDeliveredId > lastDelivered) {
+                prefs(context).edit().putInt(deliveredKey(normalizedSessionKey), latestDeliveredId).apply()
             }
         }
         schedule(context)
