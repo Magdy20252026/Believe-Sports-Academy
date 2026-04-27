@@ -674,6 +674,34 @@ function createPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $message
     return false;
 }
 
+function notifyPlayerLevelChanged(PDO $pdo, $gameId, $playerId, $previousPlayerLevel, $newPlayerLevel, $userId = null)
+{
+    $previousPlayerLevel = trim((string)$previousPlayerLevel);
+    $newPlayerLevel = trim((string)$newPlayerLevel);
+
+    if ($previousPlayerLevel === $newPlayerLevel) {
+        return false;
+    }
+
+    $levelMessage = sprintf(
+        "تم تحديث مستوى اللاعب من الإدارة.\nالمستوى السابق: %s\nالمستوى الجديد: %s",
+        $previousPlayerLevel !== '' ? $previousPlayerLevel : 'غير محدد',
+        $newPlayerLevel !== '' ? $newPlayerLevel : 'غير محدد'
+    );
+
+    return createPlayerNotification(
+        $pdo,
+        $gameId,
+        $playerId,
+        '🏆 تم تحديث المستوى',
+        $levelMessage,
+        'administrative',
+        'important',
+        null,
+        $userId
+    );
+}
+
 function buildPlayerAbsenceNotificationMessage($attendanceDateLabel, $reasonLine = '')
 {
     $messageLines = [
