@@ -752,7 +752,15 @@ function registerPlayerSubscriptionAlert(PDO $pdo, array $player, $alertKey, $ti
         return false;
     }
 
+    $startedTransaction = false;
+    $insertedAlert = false;
+
     try {
+        if (!$pdo->inTransaction()) {
+            $pdo->beginTransaction();
+            $startedTransaction = true;
+        }
+
         $stmt = $pdo->prepare(
             "INSERT IGNORE INTO player_subscription_alerts (
                 player_id,
@@ -769,29 +777,41 @@ function registerPlayerSubscriptionAlert(PDO $pdo, array $player, $alertKey, $ti
             $subscriptionStartDate,
             $subscriptionEndDate,
         ]);
+        $insertedAlert = $stmt->rowCount() > 0;
 
-        if ($stmt->rowCount() < 1) {
+        if (!$insertedAlert) {
+            if ($startedTransaction && $pdo->inTransaction()) {
+                $pdo->commit();
+            }
             return false;
         }
 
         if (createPlayerNotification($pdo, $gameId, $playerId, $title, $message, 'alert', 'important', $displayDate, $userId)) {
+            if ($startedTransaction && $pdo->inTransaction()) {
+                $pdo->commit();
+            }
             return true;
         }
 
-        $deleteStmt = $pdo->prepare(
-            "DELETE FROM player_subscription_alerts
-             WHERE player_id = ?
-               AND alert_key = ?
-               AND subscription_start_date = ?
-               AND subscription_end_date = ?"
-        );
-        $deleteStmt->execute([
-            $playerId,
-            $alertKey,
-            $subscriptionStartDate,
-            $subscriptionEndDate,
-        ]);
+        throw new RuntimeException('Failed to create player subscription notification.');
     } catch (Throwable $throwable) {
+        if ($startedTransaction && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        } elseif ($insertedAlert) {
+            $deleteStmt = $pdo->prepare(
+                "DELETE FROM player_subscription_alerts
+                 WHERE player_id = ?
+                   AND alert_key = ?
+                   AND subscription_start_date = ?
+                   AND subscription_end_date = ?"
+            );
+            $deleteStmt->execute([
+                $playerId,
+                $alertKey,
+                $subscriptionStartDate,
+                $subscriptionEndDate,
+            ]);
+        }
         error_log('Failed to register player subscription alert: ' . $throwable->getMessage());
     }
 
@@ -821,9 +841,11 @@ function ensurePlayerSubscriptionStatusNotifications(PDO $pdo, array $player, ?D
         return;
     }
 
+    $totalTrainings = max(0, (int)($player['total_trainings'] ?? 0));
+    $hasTrainingLimit = $totalTrainings > 0;
     $consumedSessionsCount = fetchPlayerConsumedSessionsCount($pdo, $playerId, $subscriptionStartDate, $subscriptionEndDate);
     $daysRemaining = calculatePlayerDaysRemaining($subscriptionEndDate, $today);
-    $remainingTrainings = calculatePlayerRemainingTrainings($player['total_trainings'] ?? 0, $consumedSessionsCount);
+    $remainingTrainings = $hasTrainingLimit ? calculatePlayerRemainingTrainings($totalTrainings, $consumedSessionsCount) : 0;
     $displayDate = $today->format('Y-m-d');
 
     if ($daysRemaining === 1 && $remainingTrainings > 0) {
@@ -838,7 +860,7 @@ function ensurePlayerSubscriptionStatusNotifications(PDO $pdo, array $player, ?D
         );
     }
 
-    if ($remainingTrainings === 1 && $daysRemaining > 0) {
+    if ($hasTrainingLimit && $remainingTrainings === 1 && $daysRemaining > 0) {
         registerPlayerSubscriptionAlert(
             $pdo,
             $player,
@@ -850,12 +872,12 @@ function ensurePlayerSubscriptionStatusNotifications(PDO $pdo, array $player, ?D
         );
     }
 
-    if ($daysRemaining === 0 || $remainingTrainings === 0) {
+    if ($daysRemaining === 0 || ($hasTrainingLimit && $remainingTrainings === 0)) {
         $messageLines = ['انتهى اشتراكك الحالي.'];
         if ($daysRemaining === 0) {
             $messageLines[] = 'سبب الانتهاء: تم الوصول إلى تاريخ نهاية الاشتراك.';
         }
-        if ($remainingTrainings === 0) {
+        if ($hasTrainingLimit && $remainingTrainings === 0) {
             $messageLines[] = 'سبب الانتهاء: تم استهلاك جميع التمرينات المتاحة.';
         }
         $messageLines[] = 'يرجى مراجعة الإدارة لتجديد الاشتراك.';
