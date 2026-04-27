@@ -263,19 +263,17 @@ try {
         (int)$player["group_id"],
         $currentLevel
     );
+    $unreadNotificationIds = [];
     foreach ($notifications as $notificationRow) {
         if ((int)($notificationRow["is_read"] ?? 0) === 0) {
             $unreadNotificationCount++;
+            if ($activeSection === "home") {
+                $unreadNotificationIds[] = (int)$notificationRow["id"];
+            }
         }
     }
 
     if ($activeSection === "home" && $unreadNotificationCount > 0) {
-        $unreadNotificationIds = [];
-        foreach ($notifications as $notificationRow) {
-            if ((int)($notificationRow["is_read"] ?? 0) === 0) {
-                $unreadNotificationIds[] = (int)$notificationRow["id"];
-            }
-        }
         markPlayerPortalNotificationsAsRead($pdo, $playerId, $unreadNotificationIds);
         $unreadNotificationCount = 0;
         $markedNotificationsAsRead = true;

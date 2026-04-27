@@ -598,15 +598,20 @@ function markPlayerPortalNotificationsAsRead(PDO $pdo, $playerId, array $notific
         return;
     }
 
+    $placeholders = [];
+    $params = [];
+    foreach ($notificationIds as $notificationId) {
+        $placeholders[] = "(?, ?, CURRENT_TIMESTAMP)";
+        $params[] = $notificationId;
+        $params[] = $playerId;
+    }
+
     $stmt = $pdo->prepare(
         "INSERT INTO player_notification_reads (notification_id, player_id, read_at)
-         VALUES (?, ?, CURRENT_TIMESTAMP)
+         VALUES " . implode(", ", $placeholders) . "
          ON DUPLICATE KEY UPDATE read_at = read_at"
     );
-
-    foreach ($notificationIds as $notificationId) {
-        $stmt->execute([$notificationId, $playerId]);
-    }
+    $stmt->execute($params);
 }
 
 function createPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $message, $notificationType = 'alert', $priorityLevel = 'important', $displayDate = null, $userId = null)
