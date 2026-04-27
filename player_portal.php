@@ -395,6 +395,11 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 }
 .pp-logout:hover { background:rgba(220,38,38,.2); }
 .pp-body { flex:1; display:flex; }
+.pp-sidebar-overlay {
+    position:fixed; inset:64px 0 0 0; background:rgba(15,23,42,.42);
+    opacity:0; pointer-events:none; transition:opacity .25s ease; z-index:140;
+}
+.pp-sidebar-overlay.show { opacity:1; pointer-events:auto; }
 
 .pp-sidebar {
     width:260px; background:var(--bg-secondary); border-left:1px solid var(--border);
@@ -620,6 +625,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
     .pp-welcome-title { font-size:1.15rem; }
     .pp-welcome-logo { width:60px; height:60px; }
     .pp-live-notice { top:76px; left:12px; width:calc(100vw - 24px); }
+    body.pp-mobile-menu-open { overflow:hidden; }
 }
 @media (max-width: 600px) {
     .pp-topbar { padding:0 12px; }
@@ -662,6 +668,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
     </div>
 
     <div class="pp-body">
+        <div class="pp-sidebar-overlay" id="ppSidebarOverlay"></div>
         <aside class="pp-sidebar" id="ppSidebar">
             <a href="?section=home" class="pp-side-item <?php echo $activeSection === 'home' ? 'active' : ''; ?>">
                 <span class="pp-side-icon">🏠</span><span class="pp-side-label">الرئيسية</span>
@@ -987,14 +994,71 @@ window.__PORTAL_SESSION_GUARD__ = {
 (function() {
     var burger = document.getElementById('ppBurger');
     var sidebar = document.getElementById('ppSidebar');
+    var sidebarOverlay = document.getElementById('ppSidebarOverlay');
+    var sidebarLinks = sidebar ? sidebar.querySelectorAll('.pp-side-item') : [];
+    var mobileMq = window.matchMedia('(max-width: 900px)');
+
+    function openMobileSidebar() {
+        if (!sidebar) return;
+        sidebar.classList.remove('collapsed');
+        sidebar.classList.add('show');
+        document.body.classList.add('pp-mobile-menu-open');
+        if (sidebarOverlay) sidebarOverlay.classList.add('show');
+        if (burger) burger.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeMobileSidebar() {
+        if (!sidebar) return;
+        sidebar.classList.remove('show');
+        document.body.classList.remove('pp-mobile-menu-open');
+        if (sidebarOverlay) sidebarOverlay.classList.remove('show');
+        if (burger) burger.setAttribute('aria-expanded', 'false');
+    }
+
+    function syncSidebarMode() {
+        if (!sidebar) return;
+        if (mobileMq.matches) {
+            sidebar.classList.remove('collapsed');
+            closeMobileSidebar();
+        } else {
+            closeMobileSidebar();
+        }
+    }
+
     if (burger && sidebar) {
+        burger.setAttribute('aria-expanded', 'false');
         burger.addEventListener('click', function() {
-            if (window.matchMedia('(max-width: 900px)').matches) {
-                sidebar.classList.toggle('show');
+            if (mobileMq.matches) {
+                if (sidebar.classList.contains('show')) {
+                    closeMobileSidebar();
+                } else {
+                    openMobileSidebar();
+                }
             } else {
+                closeMobileSidebar();
                 sidebar.classList.toggle('collapsed');
             }
         });
+    }
+
+    if (sidebarOverlay) {
+        sidebarOverlay.addEventListener('click', closeMobileSidebar);
+    }
+
+    if (sidebarLinks.length > 0) {
+        sidebarLinks.forEach(function(link) {
+            link.addEventListener('click', function() {
+                if (mobileMq.matches) {
+                    closeMobileSidebar();
+                }
+            });
+        });
+    }
+
+    if (typeof mobileMq.addEventListener === 'function') {
+        mobileMq.addEventListener('change', syncSidebarMode);
+    } else if (typeof mobileMq.addListener === 'function') {
+        mobileMq.addListener(syncSidebarMode);
     }
 
     var barcodeEl = document.getElementById('ppBarcode');
