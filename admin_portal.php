@@ -38,13 +38,14 @@ if (!$admin) {
 }
 
 function adminPortalFormatTime($time) {
-    $time = substr((string)$time, 0, 5);
+    $time = trim((string)$time);
+    if (strlen($time) < 5) return "—";
+    $time = substr($time, 0, 5);
     if (!preg_match('/^(\d{2}):(\d{2})$/', $time, $m)) return "—";
     $hour = (int)$m[1];
     $min = $m[2];
     $period = $hour >= 12 ? "م" : "ص";
-    $display = $hour % 12;
-    if ($display === 0) $display = 12;
+    $display = ($hour === 0 || $hour === 12) ? 12 : ($hour % 12);
     return str_pad((string)$display, 2, "0", STR_PAD_LEFT) . ":" . $min . " " . $period;
 }
 
