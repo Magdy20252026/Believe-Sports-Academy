@@ -39,6 +39,8 @@ internal object PortalOfflineCache {
         webView.saveWebArchive(archiveFile.absolutePath, false) { savedPath ->
             if (!savedPath.isNullOrBlank()) {
                 rememberSyncedUrl(appContext, portalUrl)
+            } else if (archiveFile.exists()) {
+                archiveFile.delete()
             }
         }
     }
