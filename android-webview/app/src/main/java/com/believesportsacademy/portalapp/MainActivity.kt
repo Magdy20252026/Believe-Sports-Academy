@@ -53,6 +53,11 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshOfflineArchiveIfNeeded()
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView(savedInstanceState: Bundle?) {
         binding.portalWebView.apply {
@@ -72,7 +77,7 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(binding.portalWebView, true)
 
         if (savedInstanceState == null) {
-            binding.portalWebView.loadUrl(BuildConfig.PORTAL_URL)
+            loadInitialPortalUrl()
         } else {
             binding.portalWebView.restoreState(savedInstanceState)
         }
@@ -116,11 +121,40 @@ class MainActivity : AppCompatActivity() {
         PortalBackgroundNotifications.showPortalNotification(this, title, message)
     }
 
+    private fun loadInitialPortalUrl() {
+        val targetUrl = PortalOfflineCache.lastSyncedUrl(this) ?: BuildConfig.PORTAL_URL
+        if (!PortalOfflineCache.isOnline(this) && PortalOfflineCache.loadCachedPage(binding.portalWebView, targetUrl)) {
+            Toast.makeText(this, R.string.offline_cached_page_loaded, Toast.LENGTH_SHORT).show()
+            return
+        }
+        binding.portalWebView.loadUrl(targetUrl)
+    }
+
+    private fun refreshOfflineArchiveIfNeeded() {
+        if (!PortalOfflineCache.isOnline(this)) {
+            return
+        }
+        if (!PortalOfflineCache.isOfflineArchiveUrl(binding.portalWebView.url)) {
+            return
+        }
+        val remoteUrl = PortalOfflineCache.lastSyncedUrl(this) ?: BuildConfig.PORTAL_URL
+        binding.portalWebView.loadUrl(remoteUrl)
+    }
+
     private inner class PortalWebViewClient : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
             val uri = request?.url ?: return false
             val scheme = uri.scheme?.lowercase().orEmpty()
             if (scheme == "http" || scheme == "https") {
+                if (request?.isForMainFrame == true && !PortalOfflineCache.isOnline(this@MainActivity)) {
+                    return if (PortalOfflineCache.loadCachedPage(binding.portalWebView, uri.toString())) {
+                        Toast.makeText(this@MainActivity, R.string.offline_cached_page_loaded, Toast.LENGTH_SHORT).show()
+                        true
+                    } else {
+                        Toast.makeText(this@MainActivity, R.string.offline_cached_page_missing, Toast.LENGTH_SHORT).show()
+                        true
+                    }
+                }
                 return false
             }
             openExternalLink(uri)
@@ -135,6 +169,7 @@ class MainActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
             binding.loadingIndicator.hide()
+            PortalOfflineCache.saveCurrentPage(binding.portalWebView, url)
             PortalBackgroundNotifications.flushCookies()
             PortalBackgroundNotifications.schedule(this@MainActivity)
         }
@@ -147,7 +182,17 @@ class MainActivity : AppCompatActivity() {
             super.onReceivedError(view, request, error)
             if (request?.isForMainFrame == true) {
                 binding.loadingIndicator.hide()
-                Toast.makeText(this@MainActivity, R.string.portal_load_error, Toast.LENGTH_SHORT).show()
+                val failingUrl = request.url?.toString()
+                if (PortalOfflineCache.loadCachedPage(binding.portalWebView, failingUrl)) {
+                    Toast.makeText(this@MainActivity, R.string.offline_cached_page_loaded, Toast.LENGTH_SHORT).show()
+                    return
+                }
+                val messageId = if (!PortalOfflineCache.isOnline(this@MainActivity) && PortalOfflineCache.hasCachedPage(this@MainActivity, failingUrl).not()) {
+                    R.string.offline_cached_page_missing
+                } else {
+                    R.string.portal_load_error
+                }
+                Toast.makeText(this@MainActivity, messageId, Toast.LENGTH_SHORT).show()
             }
         }
     }
