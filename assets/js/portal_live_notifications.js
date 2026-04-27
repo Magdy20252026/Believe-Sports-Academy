@@ -11,9 +11,10 @@
         return;
     }
 
-    var pollIntervalMs = Math.max(7000, parseInt(cfg.pollIntervalMs, 10) || 12000);
+    var pollIntervalMs = Math.max(7000, parseInt(cfg.pollIntervalMs, 10) || 10000);
     var reloadDelayMs = Math.max(800, parseInt(cfg.reloadDelayMs, 10) || 1400);
     var noticeDurationMs = Math.max(3500, parseInt(cfg.noticeDurationMs, 10) || 8000);
+    var topOffsetPx = Math.max(56, parseInt(cfg.topOffsetPx, 10) || 88);
     var inFlight = false;
     var pollTimer = null;
     var pendingReload = false;
@@ -113,7 +114,7 @@
         var style = document.createElement("style");
         style.id = "portal-live-notice-style";
         style.textContent =
-            ".portal-live-notice{position:fixed;top:88px;left:24px;width:min(380px,calc(100vw - 24px));" +
+            ".portal-live-notice{position:fixed;top:" + topOffsetPx + "px;left:24px;width:min(380px,calc(100vw - 24px));" +
             "background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;border-radius:20px;padding:18px 18px 16px;" +
             "box-shadow:0 22px 50px rgba(15,23,42,.28);z-index:1400;opacity:0;transform:translateY(-12px) scale(.98);" +
             "transition:opacity .25s ease,transform .25s ease;pointer-events:none}" +
