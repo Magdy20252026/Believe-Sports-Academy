@@ -1017,11 +1017,9 @@ window.__PORTAL_SESSION_GUARD__ = {
 
     function syncSidebarMode() {
         if (!sidebar) return;
+        closeMobileSidebar();
         if (mobileMq.matches) {
             sidebar.classList.remove('collapsed');
-            closeMobileSidebar();
-        } else {
-            closeMobileSidebar();
         }
     }
 
@@ -1057,8 +1055,6 @@ window.__PORTAL_SESSION_GUARD__ = {
 
     if (typeof mobileMq.addEventListener === 'function') {
         mobileMq.addEventListener('change', syncSidebarMode);
-    } else if (typeof mobileMq.addListener === 'function') {
-        mobileMq.addListener(syncSidebarMode);
     }
 
     var barcodeEl = document.getElementById('ppBarcode');
