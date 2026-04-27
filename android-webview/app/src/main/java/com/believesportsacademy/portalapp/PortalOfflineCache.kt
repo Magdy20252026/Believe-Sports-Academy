@@ -15,12 +15,18 @@ internal object PortalOfflineCache {
     private const val ARCHIVE_EXTENSION = ".mht"
 
     fun isOnline(context: Context): Boolean {
-        val connectivityManager = context.getSystemService(ConnectivityManager::class.java) ?: return false
-        val activeNetwork = connectivityManager.activeNetwork ?: return false
-        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED)
+        return try {
+            val connectivityManager = context.getSystemService(ConnectivityManager::class.java) ?: return false
+            val activeNetwork = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED)
+        } catch (_: SecurityException) {
+            false
+        } catch (_: RuntimeException) {
+            false
+        }
     }
 
     fun lastSyncedUrl(context: Context): String? {
