@@ -1231,6 +1231,23 @@ function countPlayersInGroup(PDO $pdo, $gameId, $groupId, $excludePlayerId = 0)
     return (int)$stmt->fetchColumn();
 }
 
+function playerGroupHasAvailableSlot(array $group)
+{
+    $maxPlayers = (int)($group['max_players'] ?? 0);
+    $currentPlayersCount = (int)($group['current_players_count'] ?? 0);
+    return $maxPlayers <= 0 || $currentPlayersCount < $maxPlayers;
+}
+
+function playerGroupReachedCapacity(PDO $pdo, $gameId, $groupId, $maxPlayers, $excludePlayerId = 0)
+{
+    $maxPlayers = (int)$maxPlayers;
+    if ($maxPlayers <= 0) {
+        return false;
+    }
+
+    return countPlayersInGroup($pdo, $gameId, $groupId, $excludePlayerId) >= $maxPlayers;
+}
+
 function fetchGroupPlayerCounts(PDO $pdo, $gameId)
 {
     $stmt = $pdo->prepare(

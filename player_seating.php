@@ -256,7 +256,7 @@ if (!empty($filterDays)) {
 $groupPlayerCounts = fetchGroupPlayerCounts($pdo, $currentGameId);
 foreach ($groups as &$group) {
     $group["current_players_count"] = $groupPlayerCounts[(int)$group["id"]] ?? 0;
-    $group["can_add_players"] = (int)$group["current_players_count"] < (int)$group["max_players"];
+    $group["can_add_players"] = playerGroupHasAvailableSlot($group);
 }
 unset($group);
 
