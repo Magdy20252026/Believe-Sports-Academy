@@ -143,13 +143,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "مستوى اللاعب طويل جدًا.";
             } else {
                 $playerStmt = $pdo->prepare(
-                    "SELECT id
+                    "SELECT id, player_level
                      FROM players
                      WHERE id = ? AND game_id = ?
                      LIMIT 1"
                 );
                 $playerStmt->execute([$playerId, $currentGameId]);
-                if (!$playerStmt->fetch()) {
+                $playerRow = $playerStmt->fetch();
+                if (!$playerRow) {
                     $error = "اللاعب غير متاح.";
                 } else {
                     try {
@@ -161,6 +162,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                              WHERE id = ? AND game_id = ?"
                         );
                         $updateStmt->execute([$playerLevel, $playerId, $currentGameId]);
+                        notifyPlayerLevelChanged(
+                            $pdo,
+                            $currentGameId,
+                            $playerId,
+                            (string)($playerRow["player_level"] ?? ""),
+                            $playerLevel
+                        );
                         syncPlayerSubscriptionHistoryFromPlayerId($pdo, $playerId, $currentGameId, "save");
                         auditTrack($pdo, "update", "players", $playerId, "تجلوس اللاعبين", "تحديث مستوى لاعب رقم " . $playerId . " إلى: " . (string)$playerLevel);
                         $pdo->commit();
