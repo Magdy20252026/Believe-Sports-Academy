@@ -1,13 +1,8 @@
 <?php
 date_default_timezone_set("Africa/Cairo");
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-
-header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
-header("Pragma: no-cache");
-header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
+require_once "portal_session.php";
+startPortalSession("player");
 
 if (!isset($_SESSION["player_portal_logged_in"]) || $_SESSION["player_portal_logged_in"] !== true) {
     header("Location: player_portal_login.php");
@@ -1113,6 +1108,12 @@ window.__PORTAL_SESSION_GUARD__ = {
         'title' => (string)$latestNotification['title'],
         'message' => (string)$latestNotification['message'],
     ] : null, JSON_UNESCAPED_UNICODE); ?>;
+    if (window.AndroidBridge && typeof window.AndroidBridge.syncPortalState === 'function') {
+        window.AndroidBridge.syncPortalState(
+            'player:<?php echo (int)$playerId; ?>',
+            latestNotification && latestNotification.id ? String(latestNotification.id) : ''
+        );
+    }
     var liveNotice = document.getElementById('ppLiveNotice');
     var liveNoticeTitle = document.getElementById('ppLiveNoticeTitle');
     var liveNoticeMessage = document.getElementById('ppLiveNoticeMessage');

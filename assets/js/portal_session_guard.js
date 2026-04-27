@@ -15,13 +15,6 @@
         return path.split("?")[0].split("#")[0];
     }
 
-    function redirect(url) {
-        if (typeof url !== "string" || url === "") {
-            return;
-        }
-        window.location.replace(url);
-    }
-
     function markActive() {
         try {
             window.sessionStorage.setItem(storageKey, "active");
@@ -32,14 +25,6 @@
         try {
             window.sessionStorage.removeItem(storageKey);
         } catch (e) {}
-    }
-
-    function isActive() {
-        try {
-            return window.sessionStorage.getItem(storageKey) === "active";
-        } catch (e) {
-            return false;
-        }
     }
 
     function bindLogoutLinks() {
@@ -64,14 +49,6 @@
         markActive();
         bindLogoutLinks();
 
-        window.addEventListener("pageshow", function () {
-            if (!isActive()) {
-                redirect(cfg.loginUrl || "");
-                return;
-            }
-            markActive();
-        });
-
         document.addEventListener("realtime:refreshed", function () {
             markActive();
         });
@@ -80,24 +57,11 @@
     }
 
     if (cfg.mode === "login") {
-        var bounceToHome = function () {
-            if (isActive()) {
-                redirect(cfg.homeUrl || "");
-            }
-        };
-
-        if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", bounceToHome);
-        } else {
-            bounceToHome();
-        }
-
-        window.addEventListener("pageshow", bounceToHome);
+        clearActive();
         return;
     }
 
     if (cfg.mode === "logout") {
         clearActive();
-        redirect(cfg.loginUrl || "");
     }
 })();
