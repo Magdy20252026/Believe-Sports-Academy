@@ -157,13 +157,12 @@ class MainActivity : AppCompatActivity() {
             val uri = request?.url ?: return false
             val scheme = uri.scheme?.lowercase().orEmpty()
             if (scheme == "http" || scheme == "https") {
-                if (request?.isForMainFrame == true && !PortalOfflineCache.isOnline(this@MainActivity)) {
-                    return if (tryLoadCachedPageWithFeedback(uri.toString())) {
-                        true
-                    } else {
+                val isOnline = PortalOfflineCache.isOnline(this@MainActivity)
+                if (request?.isForMainFrame == true && !isOnline) {
+                    if (!tryLoadCachedPageWithFeedback(uri.toString())) {
                         Toast.makeText(this@MainActivity, R.string.offline_cached_page_missing, Toast.LENGTH_SHORT).show()
-                        true
                     }
+                    return true
                 }
                 return false
             }
@@ -192,11 +191,12 @@ class MainActivity : AppCompatActivity() {
             super.onReceivedError(view, request, error)
             if (request?.isForMainFrame == true) {
                 binding.loadingIndicator.hide()
+                val isOnline = PortalOfflineCache.isOnline(this@MainActivity)
                 val failingUrl = request.url?.toString()
                 if (tryLoadCachedPageWithFeedback(failingUrl)) {
                     return
                 }
-                val messageId = if (!PortalOfflineCache.isOnline(this@MainActivity) && !PortalOfflineCache.hasCachedPage(this@MainActivity, failingUrl)) {
+                val messageId = if (!isOnline && !PortalOfflineCache.hasCachedPage(this@MainActivity, failingUrl)) {
                     R.string.offline_cached_page_missing
                 } else {
                     R.string.portal_load_error
