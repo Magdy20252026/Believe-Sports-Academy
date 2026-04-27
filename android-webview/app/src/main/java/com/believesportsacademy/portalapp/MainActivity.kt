@@ -187,7 +187,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this@MainActivity, R.string.offline_cached_page_loaded, Toast.LENGTH_SHORT).show()
                     return
                 }
-                val messageId = if (!PortalOfflineCache.isOnline(this@MainActivity) && PortalOfflineCache.hasCachedPage(this@MainActivity, failingUrl).not()) {
+                val messageId = if (!PortalOfflineCache.isOnline(this@MainActivity) && !PortalOfflineCache.hasCachedPage(this@MainActivity, failingUrl)) {
                     R.string.offline_cached_page_missing
                 } else {
                     R.string.portal_load_error

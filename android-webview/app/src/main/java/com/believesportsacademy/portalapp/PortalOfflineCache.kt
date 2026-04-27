@@ -33,7 +33,6 @@ internal object PortalOfflineCache {
     fun saveCurrentPage(webView: WebView, url: String?) {
         val portalUrl = url?.takeIf(::isPortalUrl) ?: return
         val appContext = webView.context.applicationContext
-        rememberSyncedUrl(appContext, portalUrl)
         val archiveFile = archiveFile(appContext, portalUrl)
         archiveFile.parentFile?.mkdirs()
         webView.saveWebArchive(archiveFile.absolutePath, false) { savedPath ->
