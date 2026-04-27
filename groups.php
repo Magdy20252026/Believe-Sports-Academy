@@ -1,0 +1,873 @@
+<?php
+require_once "session.php";
+startSecureSession();
+require_once "config.php";
+require_once "navigation.php";
+require_once "players_support.php";
+
+const GROUP_LEVELS_BY_GAME = [
+    "جمباز" => [
+        "بيبي فتنس جمباز",
+        "مدارس جمباز",
+        "تجهيزي فني",
+        "تجهيزي ايروبيك",
+        "جمباز ايروبيك",
+        "تحت ٦ سنوات جمباز فني",
+        "تحت ٧ سنوات جمباز فني",
+        "تحت ٨ سنوات جمباز فني",
+        "تحت ٩ سنوات جمباز فني",
+        "تحت ١٠ سنوات جمباز فني",
+        "باليه جمباز",
+        "باليهات جمباز",
+    ],
+    "سباحة" => [
+        "مدارس سباحة يومين",
+        "مدارس سباحة ٣ ايام",
+        "مدارس سباحة مميز",
+        "برايفت سباحة",
+        "تجهيزي سباحة",
+        "فريق سباحة",
+    ],
+    "خماسي" => [
+        "اوبستكلس 8 حصص",
+        "اوبستكلس 12 حصة",
+        "فريق ثنائي (ليزر رن)",
+        "مدارس ثنائي (جري و سباحة)",
+        "فريق ثنائي (جري و سباحة)",
+        "مدارس ثنائي (اوبستكلس سباحة)",
+        "فريق ثنائي (اوبستكلس سباحة)",
+        "فريق ثلاثي (اوبستكلس ليزر رن)",
+        "مدارس ثلاثي (سباحة ليزر رن)",
+        "فريق ثلاثي (سباحة ليزر رن)",
+        "فريق رباعي (سباحة اوبستكلس ليزر رن)",
+        "فريق خماسي حديث",
+    ],
+    "فتنس" => [
+        "فتنس ارضي",
+        "فتنس وظيفي",
+        "فتنس مميز",
+        "فتنس برايفت",
+    ],
+    "يد" => [
+        "مدارس",
+        "تجهيزي",
+        "فريق",
+    ],
+    "طايرة" => [
+        "مدارس",
+        "تجهيزي",
+        "فريق",
+    ],
+];
+
+requireAuthenticatedUser();
+requireMenuAccess("groups");
+
+function ensureSportsGroupsTable(PDO $pdo)
+{
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS sports_groups (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            game_id INT(11) NOT NULL,
+            group_name VARCHAR(150) NOT NULL,
+            group_level VARCHAR(150) NOT NULL,
+            training_days_count INT(11) NOT NULL DEFAULT 1,
+            training_day_keys VARCHAR(255) NOT NULL DEFAULT '',
+            training_time TIME NULL DEFAULT NULL,
+            trainings_count INT(11) NOT NULL DEFAULT 1,
+            exercises_count INT(11) NOT NULL DEFAULT 1,
+            max_players INT(11) NOT NULL DEFAULT 1,
+            trainer_name VARCHAR(150) NOT NULL,
+            academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+            walkers_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            other_weapons_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            civilian_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_sports_groups_game (game_id),
+            KEY idx_sports_groups_game_level (game_id, group_level)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+
+    $requiredColumns = [
+        "training_days_count" => "ALTER TABLE sports_groups ADD COLUMN training_days_count INT(11) NOT NULL DEFAULT 1 AFTER group_level",
+        "training_day_keys" => "ALTER TABLE sports_groups ADD COLUMN training_day_keys VARCHAR(255) NOT NULL DEFAULT '' AFTER training_days_count",
+        "training_time" => "ALTER TABLE sports_groups ADD COLUMN training_time TIME NULL DEFAULT NULL AFTER training_day_keys",
+        "trainings_count" => "ALTER TABLE sports_groups ADD COLUMN trainings_count INT(11) NOT NULL DEFAULT 1 AFTER training_time",
+        "exercises_count" => "ALTER TABLE sports_groups ADD COLUMN exercises_count INT(11) NOT NULL DEFAULT 1 AFTER trainings_count",
+        "max_players" => "ALTER TABLE sports_groups ADD COLUMN max_players INT(11) NOT NULL DEFAULT 1 AFTER exercises_count",
+        "academy_percentage" => "ALTER TABLE sports_groups ADD COLUMN academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER trainer_name",
+    ];
+
+    $existingColumnsStmt = $pdo->prepare(
+        "SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = ?
+           AND COLUMN_NAME = ?
+         LIMIT 1"
+    );
+
+    foreach ($requiredColumns as $columnName => $sql) {
+        $existingColumnsStmt->execute(["sports_groups", $columnName]);
+        if (!$existingColumnsStmt->fetchColumn()) {
+            try {
+                $pdo->exec($sql);
+            } catch (Throwable $throwable) {
+                error_log(
+                    "Failed to ensure sports_groups.{$columnName} exists using SQL [{$sql}]: "
+                    . $throwable->getMessage()
+                );
+            }
+        }
+    }
+
+    $databaseName = (string)$pdo->query("SELECT DATABASE()")->fetchColumn();
+    if ($databaseName === "") {
+        return;
+    }
+
+    $constraintsStmt = $pdo->prepare(
+        "SELECT CONSTRAINT_NAME
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = ?
+           AND TABLE_NAME = 'sports_groups'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $constraintsStmt->execute([$databaseName]);
+    $existingConstraints = array_column($constraintsStmt->fetchAll(), "CONSTRAINT_NAME");
+
+    if (!in_array("fk_sports_groups_game", $existingConstraints, true)) {
+        $pdo->exec(
+            "ALTER TABLE sports_groups
+             ADD CONSTRAINT fk_sports_groups_game
+             FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE"
+        );
+    }
+}
+
+function getGroupLevelsForGame($gameName)
+{
+    $gameName = trim((string)$gameName);
+    return GROUP_LEVELS_BY_GAME[$gameName] ?? [];
+}
+
+function normalizeArabicNumericInput($value)
+{
+    $value = trim((string)$value);
+    if ($value === "") {
+        return "";
+    }
+
+    $value = strtr($value, [
+        "٠" => "0",
+        "١" => "1",
+        "٢" => "2",
+        "٣" => "3",
+        "٤" => "4",
+        "٥" => "5",
+        "٦" => "6",
+        "٧" => "7",
+        "٨" => "8",
+        "٩" => "9",
+        "٫" => ".",
+        "٬" => "",
+        "،" => ".",
+    ]);
+
+    return str_replace([" ", "\u{00A0}"], "", $value);
+}
+
+function normalizeGroupCountValue($value)
+{
+    $value = normalizeArabicNumericInput($value);
+    if ($value === "" || preg_match('/^\d+$/', $value) !== 1) {
+        return "";
+    }
+
+    $intValue = (int)$value;
+    if ($intValue <= 0) {
+        return "";
+    }
+
+    return (string)$intValue;
+}
+
+function normalizeGroupPriceValue($value)
+{
+    $value = normalizeArabicNumericInput($value);
+    if ($value === "" || !is_numeric($value)) {
+        return "";
+    }
+
+    $floatValue = (float)$value;
+    if ($floatValue < 0) {
+        return "";
+    }
+
+    return number_format($floatValue, 2, ".", "");
+}
+
+function formatCurrencyLabel($value)
+{
+    return number_format((float)$value, 2) . " ج.م";
+}
+
+function normalizeGroupPercentageValue($value)
+{
+    $value = normalizeArabicNumericInput($value);
+    if ($value === "" || !is_numeric($value)) {
+        return "";
+    }
+
+    $floatValue = (float)$value;
+    if ($floatValue < 0 || $floatValue > 100) {
+        return "";
+    }
+
+    return number_format($floatValue, 2, ".", "");
+}
+
+function formatPercentageLabel($value)
+{
+    return number_format((float)$value, 2) . "%";
+}
+
+function groupRecordExists(PDO $pdo, $gameId, $groupId)
+{
+    $stmt = $pdo->prepare("SELECT id FROM sports_groups WHERE id = ? AND game_id = ? LIMIT 1");
+    $stmt->execute([(int)$groupId, (int)$gameId]);
+    return (bool)$stmt->fetch();
+}
+
+function getGroupTrainerName(PDO $pdo, $gameId, $groupId)
+{
+    $stmt = $pdo->prepare("SELECT trainer_name FROM sports_groups WHERE id = ? AND game_id = ? LIMIT 1");
+    $stmt->execute([(int)$groupId, (int)$gameId]);
+    $trainerName = $stmt->fetchColumn();
+    return $trainerName === false ? "" : trim((string)$trainerName);
+}
+
+function groupDuplicateExists(PDO $pdo, $gameId, $groupName, $groupLevel, $groupId = 0)
+{
+    $sql = (int)$groupId > 0
+        ? "SELECT id FROM sports_groups WHERE game_id = ? AND group_name = ? AND group_level = ? AND id <> ? LIMIT 1"
+        : "SELECT id FROM sports_groups WHERE game_id = ? AND group_name = ? AND group_level = ? LIMIT 1";
+
+    $stmt = $pdo->prepare($sql);
+    $params = (int)$groupId > 0
+        ? [(int)$gameId, (string)$groupName, (string)$groupLevel, (int)$groupId]
+        : [(int)$gameId, (string)$groupName, (string)$groupLevel];
+    $stmt->execute($params);
+
+    return (bool)$stmt->fetch();
+}
+
+if (!isset($_SESSION["groups_csrf_token"])) {
+    $_SESSION["groups_csrf_token"] = bin2hex(random_bytes(32));
+}
+
+ensureSportsGroupsTable($pdo);
+
+$success = "";
+$error = "";
+$currentGameId = (int)($_SESSION["selected_game_id"] ?? 0);
+$currentGameName = (string)($_SESSION["selected_game_name"] ?? "");
+
+$settingsStmt = $pdo->query("SELECT * FROM settings ORDER BY id DESC LIMIT 1");
+$settings = $settingsStmt->fetch();
+$sidebarName = $settings["academy_name"] ?? ($_SESSION["site_name"] ?? "أكاديمية رياضية");
+$sidebarLogo = $settings["academy_logo"] ?? ($_SESSION["site_logo"] ?? "assets/images/logo.png");
+$activeMenu = "groups";
+
+$gamesStmt = $pdo->query("SELECT id, name FROM games WHERE status = 1 ORDER BY id ASC");
+$allGames = $gamesStmt->fetchAll();
+$allGameMap = [];
+foreach ($allGames as $game) {
+    $allGameMap[(int)$game["id"]] = $game;
+}
+
+if ($currentGameId <= 0 || !isset($allGameMap[$currentGameId])) {
+    header("Location: dashboard.php");
+    exit;
+}
+
+$levelOptions = getGroupLevelsForGame($currentGameName);
+$trainerSuggestions = [];
+
+try {
+    $trainerSuggestionsStmt = $pdo->prepare("SELECT name FROM trainers WHERE game_id = ? ORDER BY name ASC");
+    $trainerSuggestionsStmt->execute([$currentGameId]);
+    $trainerSuggestions = array_values(array_unique(array_filter(array_map(function ($trainer) {
+        return trim((string)($trainer["name"] ?? ""));
+    }, $trainerSuggestionsStmt->fetchAll()))));
+} catch (Throwable $throwable) {
+    $trainerSuggestions = [];
+}
+
+$formData = [
+    "id" => 0,
+    "group_name" => "",
+    "group_level" => "",
+    "training_days_count" => "",
+    "training_day_keys" => [],
+    "training_time" => "",
+    "trainings_count" => "",
+    "exercises_count" => "",
+    "max_players" => "",
+    "trainer_name" => "",
+    "academy_percentage" => "",
+    "walkers_price" => "",
+    "other_weapons_price" => "",
+    "civilian_price" => "",
+];
+
+$flashSuccess = $_SESSION["groups_success"] ?? "";
+unset($_SESSION["groups_success"]);
+if ($flashSuccess !== "") {
+    $success = $flashSuccess;
+}
+
+if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $csrfToken = $_POST["csrf_token"] ?? "";
+
+    if (!hash_equals($_SESSION["groups_csrf_token"], $csrfToken)) {
+        $error = "الطلب غير صالح.";
+    } else {
+        $action = $_POST["action"] ?? "";
+
+        if ($action === "save") {
+            $formData = [
+                "id" => (int)($_POST["group_id"] ?? 0),
+                "group_name" => trim((string)($_POST["group_name"] ?? "")),
+                "group_level" => trim((string)($_POST["group_level"] ?? "")),
+                "training_days_count" => normalizeGroupCountValue($_POST["training_days_count"] ?? ""),
+                "training_day_keys" => sanitizePlayerTrainingDayKeys($_POST["training_day_keys"] ?? []),
+                "training_time" => normalizeTrainingTimeValue($_POST["training_time"] ?? ""),
+                "trainings_count" => normalizeGroupCountValue($_POST["trainings_count"] ?? ""),
+                "exercises_count" => normalizeGroupCountValue($_POST["exercises_count"] ?? ""),
+                "max_players" => normalizeGroupCountValue($_POST["max_players"] ?? ""),
+                "trainer_name" => trim((string)($_POST["trainer_name"] ?? "")),
+                "academy_percentage" => normalizeGroupPercentageValue($_POST["academy_percentage"] ?? ""),
+                "walkers_price" => normalizeGroupPriceValue($_POST["walkers_price"] ?? ""),
+                "other_weapons_price" => normalizeGroupPriceValue($_POST["other_weapons_price"] ?? ""),
+                "civilian_price" => normalizeGroupPriceValue($_POST["civilian_price"] ?? ""),
+            ];
+
+            $trainerValidationOptions = $trainerSuggestions;
+            if ($formData["id"] > 0) {
+                $existingTrainerName = getGroupTrainerName($pdo, $currentGameId, $formData["id"]);
+                if ($existingTrainerName !== "" && !in_array($existingTrainerName, $trainerValidationOptions, true)) {
+                    $trainerValidationOptions[] = $existingTrainerName;
+                }
+            }
+
+            if ($formData["group_name"] === "") {
+                $error = "اسم المجموعة مطلوب.";
+            } elseif ($formData["group_level"] === "") {
+                $error = "مستوى المجموعة مطلوب.";
+            } elseif (count($levelOptions) > 0 && !in_array($formData["group_level"], $levelOptions, true)) {
+                $error = "مستوى المجموعة غير متاح لهذه اللعبة.";
+            } elseif ($formData["training_days_count"] === "") {
+                $error = "عدد أيام التمرين خلال الأسبوع غير صحيح.";
+            } elseif (count($formData["training_day_keys"]) !== (int)$formData["training_days_count"]) {
+                $error = "يجب تحديد " . (int)$formData["training_days_count"] . " يوم تمرين للمجموعة.";
+            } elseif ($formData["training_time"] === "") {
+                $error = "ميعاد التمرين غير صحيح.";
+            } elseif ($formData["trainings_count"] === "") {
+                $error = "إجمالي عدد أيام التمرين غير صحيح.";
+            } elseif ($formData["exercises_count"] === "") {
+                $error = "عدد التمرينات غير صحيح.";
+            } elseif ($formData["max_players"] === "") {
+                $error = "الحد الأقصى للاعبين غير صحيح.";
+            } elseif ($formData["trainer_name"] === "") {
+                $error = "اسم المدرب مطلوب.";
+            } elseif (!in_array($formData["trainer_name"], $trainerValidationOptions, true)) {
+                $error = "المدرب المحدد غير متاح.";
+            } elseif ($formData["academy_percentage"] === "") {
+                $error = "نسبة الأكاديمية يجب أن تكون من 0 إلى 100.";
+            } elseif ($formData["walkers_price"] === "") {
+                $error = "سعر المشاة غير صحيح.";
+            } elseif ($formData["other_weapons_price"] === "") {
+                $error = "سعر الأسلحة الأخرى غير صحيح.";
+            } elseif ($formData["civilian_price"] === "") {
+                $error = "سعر المدني غير صحيح.";
+            } elseif ($formData["id"] > 0 && !groupRecordExists($pdo, $currentGameId, $formData["id"])) {
+                $error = "المجموعة غير متاحة.";
+            } elseif (groupDuplicateExists($pdo, $currentGameId, $formData["group_name"], $formData["group_level"], $formData["id"])) {
+                $error = "هذه المجموعة مسجلة بالفعل لنفس المستوى.";
+            } elseif ($formData["id"] > 0 && countPlayersInGroup($pdo, $currentGameId, $formData["id"], 0) > (int)$formData["max_players"]) {
+                $error = "الحد الأقصى للاعبين لا يمكن أن يكون أقل من عدد اللاعبين الحاليين بالمجموعة.";
+            } else {
+                $trainingDayValue = implode(PLAYER_DAY_SEPARATOR, $formData["training_day_keys"]);
+                try {
+                    if ($formData["id"] > 0) {
+                        $updateStmt = $pdo->prepare(
+                            "UPDATE sports_groups
+                             SET group_name = ?, group_level = ?, training_days_count = ?, training_day_keys = ?, training_time = ?, trainings_count = ?, exercises_count = ?, max_players = ?, trainer_name = ?,
+                                  academy_percentage = ?, walkers_price = ?, other_weapons_price = ?, civilian_price = ?
+                              WHERE id = ? AND game_id = ?"
+                        );
+                        $updateStmt->execute([
+                            $formData["group_name"],
+                            $formData["group_level"],
+                            (int)$formData["training_days_count"],
+                            $trainingDayValue,
+                            $formData["training_time"],
+                            (int)$formData["trainings_count"],
+                            (int)$formData["exercises_count"],
+                            (int)$formData["max_players"],
+                            $formData["trainer_name"],
+                            $formData["academy_percentage"],
+                            $formData["walkers_price"],
+                            $formData["other_weapons_price"],
+                            $formData["civilian_price"],
+                            $formData["id"],
+                            $currentGameId,
+                        ]);
+                        auditTrack($pdo, "update", "sports_groups", $formData["id"], "المجموعات", "تعديل مجموعة: " . $formData["group_name"]);
+                        $_SESSION["groups_success"] = "تم تعديل المجموعة ✅";
+                    } else {
+                        $insertStmt = $pdo->prepare(
+                            "INSERT INTO sports_groups (
+                                game_id, group_name, group_level, training_days_count, training_day_keys, training_time, trainings_count,
+                                exercises_count, max_players, trainer_name, academy_percentage, walkers_price, other_weapons_price, civilian_price
+                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        );
+                        $insertStmt->execute([
+                            $currentGameId,
+                            $formData["group_name"],
+                            $formData["group_level"],
+                            (int)$formData["training_days_count"],
+                            $trainingDayValue,
+                            $formData["training_time"],
+                            (int)$formData["trainings_count"],
+                            (int)$formData["exercises_count"],
+                            (int)$formData["max_players"],
+                            $formData["trainer_name"],
+                            $formData["academy_percentage"],
+                            $formData["walkers_price"],
+                            $formData["other_weapons_price"],
+                            $formData["civilian_price"],
+                        ]);
+                        $newGroupId = (int)$pdo->lastInsertId();
+                        auditTrack($pdo, "create", "sports_groups", $newGroupId, "المجموعات", "إضافة مجموعة: " . $formData["group_name"]);
+                        $_SESSION["groups_success"] = "تم حفظ المجموعة ✅";
+                    }
+
+                    header("Location: groups.php");
+                    exit;
+                } catch (Throwable $throwable) {
+                    $error = "تعذر حفظ بيانات المجموعة.";
+                }
+            }
+        }
+
+        if ($action === "delete") {
+            $deleteGroupId = (int)($_POST["group_id"] ?? 0);
+
+            if ($deleteGroupId <= 0) {
+                $error = "المجموعة غير صالحة.";
+            } elseif (!groupRecordExists($pdo, $currentGameId, $deleteGroupId)) {
+                $error = "المجموعة غير متاحة.";
+            } else {
+                try {
+                    $grpNameStmt = $pdo->prepare("SELECT group_name FROM sports_groups WHERE id = ? AND game_id = ? LIMIT 1");
+                    $grpNameStmt->execute([$deleteGroupId, $currentGameId]);
+                    $deletedGroupName = (string)($grpNameStmt->fetchColumn() ?: "");
+                    $deleteStmt = $pdo->prepare("DELETE FROM sports_groups WHERE id = ? AND game_id = ?");
+                    $deleteStmt->execute([$deleteGroupId, $currentGameId]);
+                    auditLogActivity($pdo, "delete", "sports_groups", $deleteGroupId, "المجموعات", "حذف مجموعة: " . $deletedGroupName);
+                    $_SESSION["groups_success"] = "تم حذف المجموعة 🗑️";
+                    header("Location: groups.php");
+                    exit;
+                } catch (Throwable $throwable) {
+                    $error = "تعذر حذف المجموعة.";
+                }
+            }
+        }
+    }
+}
+
+$editGroupId = (int)($_GET["edit"] ?? 0);
+if ($editGroupId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
+    $editStmt = $pdo->prepare(
+        "SELECT id, group_name, group_level, training_days_count, training_day_keys, training_time, trainings_count, exercises_count, max_players, trainer_name, academy_percentage,
+                walkers_price, other_weapons_price, civilian_price
+         FROM sports_groups
+         WHERE id = ? AND game_id = ?
+         LIMIT 1"
+    );
+    $editStmt->execute([$editGroupId, $currentGameId]);
+    $editGroup = $editStmt->fetch();
+
+    if ($editGroup) {
+        $formData = [
+            "id" => (int)$editGroup["id"],
+            "group_name" => (string)$editGroup["group_name"],
+            "group_level" => (string)$editGroup["group_level"],
+            "training_days_count" => (string)(int)$editGroup["training_days_count"],
+            "training_day_keys" => getPlayerTrainingDayKeys($editGroup["training_day_keys"] ?? ""),
+            "training_time" => formatTrainingTimeLabel($editGroup["training_time"] ?? ""),
+            "trainings_count" => (string)(int)$editGroup["trainings_count"],
+            "exercises_count" => (string)(int)$editGroup["exercises_count"],
+            "max_players" => (string)(int)$editGroup["max_players"],
+            "trainer_name" => (string)$editGroup["trainer_name"],
+            "academy_percentage" => number_format((float)$editGroup["academy_percentage"], 2, ".", ""),
+            "walkers_price" => number_format((float)$editGroup["walkers_price"], 2, ".", ""),
+            "other_weapons_price" => number_format((float)$editGroup["other_weapons_price"], 2, ".", ""),
+            "civilian_price" => number_format((float)$editGroup["civilian_price"], 2, ".", ""),
+        ];
+    }
+}
+
+$trainerSelectOptions = $trainerSuggestions;
+if (
+    $formData["trainer_name"] !== ""
+    && !in_array($formData["trainer_name"], $trainerSelectOptions, true)
+) {
+    $trainerSelectOptions[] = $formData["trainer_name"];
+    sort($trainerSelectOptions, SORT_NATURAL);
+}
+$hasTrainerOptions = count($trainerSelectOptions) > 0;
+
+$groupPlayerCounts = fetchGroupPlayerCounts($pdo, $currentGameId);
+$groupsStmt = $pdo->prepare(
+    "SELECT id, group_name, group_level, training_days_count, training_day_keys, training_time, trainings_count, exercises_count, max_players, trainer_name,
+            academy_percentage, walkers_price, other_weapons_price, civilian_price, created_at, updated_at, created_by_user_id, updated_by_user_id
+     FROM sports_groups
+     WHERE game_id = ?
+     ORDER BY group_level ASC, group_name ASC, id DESC"
+);
+$groupsStmt->execute([$currentGameId]);
+$groups = $groupsStmt->fetchAll();
+foreach ($groups as &$group) {
+    $group["current_players_count"] = $groupPlayerCounts[(int)$group["id"]] ?? 0;
+    $group["training_day_labels"] = formatPlayerTrainingDaysLabel(getPlayerTrainingDayKeys($group["training_day_keys"] ?? ""));
+    $group["training_time_label"] = formatTrainingTimeDisplay($group["training_time"] ?? "");
+}
+unset($group);
+
+$trainerSelectAriaLabel = $hasTrainerOptions ? "المدرب" : "لا يوجد مدرب متاح";
+$submitButtonLabel = $formData["id"] > 0 ? "تحديث المجموعة" : "حفظ المجموعة";
+$submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمكن الحفظ: لا يوجد مدرب متاح";
+?>
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Language" content="ar">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>المجموعات</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body class="dashboard-page">
+<div class="dashboard-layout">
+    <?php require "sidebar_menu.php"; ?>
+
+    <main class="main-content groups-page">
+        <header class="topbar">
+            <div class="topbar-right">
+                <button class="mobile-sidebar-btn" id="mobileSidebarBtn" type="button">📋</button>
+                <div>
+                    <h1>المجموعات</h1>
+                </div>
+            </div>
+
+            <div class="topbar-left users-topbar-left">
+                <span class="context-badge">🎯 <?php echo htmlspecialchars($currentGameName, ENT_QUOTES, 'UTF-8'); ?></span>
+                <label class="theme-switch" for="themeToggle">
+                    <input type="checkbox" id="themeToggle">
+                    <span class="theme-slider">
+                        <span class="theme-icon sun">☀️</span>
+                        <span class="theme-icon moon">🌙</span>
+                    </span>
+                </label>
+            </div>
+        </header>
+
+        <?php if ($success !== ""): ?>
+            <div class="alert-success"><?php echo htmlspecialchars($success, ENT_QUOTES, 'UTF-8'); ?></div>
+        <?php endif; ?>
+
+        <?php if ($error !== ""): ?>
+            <div class="alert-error"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
+        <?php endif; ?>
+
+        <section class="groups-grid">
+            <div class="card groups-form-card">
+                <div class="card-head">
+                    <div>
+                        <h3><?php echo $formData["id"] > 0 ? "تعديل المجموعة" : "إضافة مجموعة"; ?></h3>
+                    </div>
+                    <?php if ($formData["id"] > 0): ?>
+                        <a href="groups.php" class="btn btn-soft" aria-label="إلغاء التعديل">إلغاء</a>
+                    <?php endif; ?>
+                </div>
+
+                <form method="POST" class="login-form">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION["groups_csrf_token"], ENT_QUOTES, 'UTF-8'); ?>">
+                    <input type="hidden" name="action" value="save">
+                    <input type="hidden" name="group_id" value="<?php echo (int)$formData["id"]; ?>">
+
+                    <div class="groups-form-grid">
+                        <div class="form-group group-field-full">
+                            <label for="group_name">اسم المجموعة</label>
+                            <input type="text" name="group_name" id="group_name" value="<?php echo htmlspecialchars($formData["group_name"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+
+                        <div class="form-group group-field-full">
+                            <label for="group_level">مستوى المجموعة</label>
+                            <?php if (count($levelOptions) > 0): ?>
+                                <div class="select-shell">
+                                    <select name="group_level" id="group_level" required>
+                                        <option value="">اختر المستوى</option>
+                                        <?php foreach ($levelOptions as $levelOption): ?>
+                                            <option value="<?php echo htmlspecialchars($levelOption, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData["group_level"] === $levelOption ? "selected" : ""; ?>>
+                                                <?php echo htmlspecialchars($levelOption, ENT_QUOTES, 'UTF-8'); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            <?php else: ?>
+                                <input type="text" name="group_level" id="group_level" value="<?php echo htmlspecialchars($formData["group_level"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                            <?php endif; ?>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="training_days_count">عدد أيام التمرين خلال الأسبوع</label>
+                            <input type="text" inputmode="numeric" name="training_days_count" id="training_days_count" value="<?php echo htmlspecialchars($formData["training_days_count"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+
+                        <div class="form-group group-field-full">
+                            <label>أيام التمرين للمجموعة</label>
+                            <p class="form-helper-text" id="groupTrainingDaysHelper">حدد عدد الأيام المطلوب أولًا، وسيتم حفظ الميعاد بتوقيت جمهورية مصر العربية.</p>
+                            <div class="trainer-days-grid player-days-grid" id="groupTrainingDaysContainer"></div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="training_time">ميعاد التمرين</label>
+                            <input type="time" name="training_time" id="training_time" value="<?php echo htmlspecialchars($formData["training_time"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="trainings_count">إجمالي عدد أيام التمرين</label>
+                            <input type="text" inputmode="numeric" name="trainings_count" id="trainings_count" value="<?php echo htmlspecialchars($formData["trainings_count"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="exercises_count">عدد التمرينات</label>
+                            <input type="text" inputmode="numeric" name="exercises_count" id="exercises_count" value="<?php echo htmlspecialchars($formData["exercises_count"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="max_players">الحد الأقصى للاعبين</label>
+                            <input type="text" inputmode="numeric" name="max_players" id="max_players" value="<?php echo htmlspecialchars($formData["max_players"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+
+                        <div class="form-group group-field-full">
+                            <label for="trainer_name">المدرب</label>
+                            <div class="select-shell trainer-select-shell">
+                                <select name="trainer_name" id="trainer_name" class="group-trainer-select" aria-label="<?php echo htmlspecialchars($trainerSelectAriaLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $hasTrainerOptions ? "required" : "disabled"; ?>>
+                                    <option value=""><?php echo $hasTrainerOptions ? "اختر المدرب" : "لا يوجد مدرب متاح"; ?></option>
+                                    <?php foreach ($trainerSelectOptions as $trainerOption): ?>
+                                        <option value="<?php echo htmlspecialchars($trainerOption, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData["trainer_name"] === $trainerOption ? "selected" : ""; ?>>
+                                            <?php echo htmlspecialchars($trainerOption, ENT_QUOTES, 'UTF-8'); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="academy_percentage">نسبة الأكاديمية (%)</label>
+                            <input type="text" inputmode="decimal" name="academy_percentage" id="academy_percentage" value="<?php echo htmlspecialchars($formData["academy_percentage"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="walkers_price">سعر المشاة</label>
+                            <input type="text" inputmode="decimal" name="walkers_price" id="walkers_price" value="<?php echo htmlspecialchars($formData["walkers_price"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="other_weapons_price">سعر الأسلحة الأخرى</label>
+                            <input type="text" inputmode="decimal" name="other_weapons_price" id="other_weapons_price" value="<?php echo htmlspecialchars($formData["other_weapons_price"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+
+                        <div class="form-group group-field-full">
+                            <label for="civilian_price">سعر المدني</label>
+                            <input type="text" inputmode="decimal" name="civilian_price" id="civilian_price" value="<?php echo htmlspecialchars($formData["civilian_price"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" aria-label="<?php echo htmlspecialchars($submitButtonAriaLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo !$hasTrainerOptions ? "disabled" : ""; ?>><?php echo htmlspecialchars($submitButtonLabel, ENT_QUOTES, 'UTF-8'); ?></button>
+                </form>
+            </div>
+
+            <div class="card groups-table-card">
+                <div class="card-head table-card-head">
+                    <div>
+                        <h3>مجموعات <?php echo htmlspecialchars($currentGameName, ENT_QUOTES, 'UTF-8'); ?></h3>
+                    </div>
+                    <span class="table-counter">الإجمالي: <?php echo count($groups); ?></span>
+                </div>
+
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>المجموعة</th>
+                                <th>المستوى</th>
+                                <th>المدرب</th>
+                                <th>أيام التمرين أسبوعياً</th>
+                                <th>جدول التمرين</th>
+                                <th>إجمالي أيام التمرين</th>
+                                <th>عدد التمرينات</th>
+                                <th>السعة</th>
+                                <th>الأسعار</th>
+                                <th>أضيف بواسطة</th>
+                                <th>عدّل بواسطة</th>
+                                <th>الإجراءات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (count($groups) === 0): ?>
+                                <tr>
+                                    <td colspan="12" class="empty-cell">لا توجد مجموعات مسجلة.</td>
+                                </tr>
+                            <?php else: ?>
+                                <?php foreach ($groups as $group): ?>
+                                    <tr>
+                                        <td data-label="المجموعة">
+                                            <div class="group-name-cell">
+                                                <strong><?php echo htmlspecialchars($group["group_name"], ENT_QUOTES, 'UTF-8'); ?></strong>
+                                            </div>
+                                        </td>
+                                        <td data-label="المستوى">
+                                            <span class="group-level-pill"><?php echo htmlspecialchars($group["group_level"], ENT_QUOTES, 'UTF-8'); ?></span>
+                                        </td>
+                                        <td data-label="المدرب"><?php echo htmlspecialchars($group["trainer_name"], ENT_QUOTES, 'UTF-8'); ?></td>
+                                        <td data-label="أيام التمرين أسبوعياً"><?php echo (int)$group["training_days_count"]; ?></td>
+                                        <td data-label="جدول التمرين">
+                                            <div class="price-stack">
+                                                <span class="info-pill"><?php echo htmlspecialchars(count($group["training_day_labels"]) > 0 ? implode(" - ", $group["training_day_labels"]) : "—", ENT_QUOTES, "UTF-8"); ?></span>
+                                                <span class="price-pill"><?php echo htmlspecialchars($group["training_time_label"] !== "" ? $group["training_time_label"] : "—", ENT_QUOTES, "UTF-8"); ?></span>
+                                            </div>
+                                        </td>
+                                        <td data-label="إجمالي أيام التمرين"><?php echo (int)$group["trainings_count"]; ?></td>
+                                        <td data-label="عدد التمرينات"><?php echo (int)$group["exercises_count"]; ?></td>
+                                        <td data-label="السعة"><?php echo (int)$group["current_players_count"]; ?> / <?php echo (int)$group["max_players"]; ?></td>
+                                        <td data-label="الأسعار">
+                                            <div class="price-stack">
+                                                <span class="info-pill">نسبة الأكاديمية: <?php echo htmlspecialchars(formatPercentageLabel($group["academy_percentage"]), ENT_QUOTES, 'UTF-8'); ?></span>
+                                                <span class="price-pill">المشاة: <?php echo htmlspecialchars(formatCurrencyLabel($group["walkers_price"]), ENT_QUOTES, 'UTF-8'); ?></span>
+                                                <span class="price-pill">الأسلحة الأخرى: <?php echo htmlspecialchars(formatCurrencyLabel($group["other_weapons_price"]), ENT_QUOTES, 'UTF-8'); ?></span>
+                                                <span class="price-pill">المدني: <?php echo htmlspecialchars(formatCurrencyLabel($group["civilian_price"]), ENT_QUOTES, 'UTF-8'); ?></span>
+                                            </div>
+                                        </td>
+                                        <td data-label="أضيف بواسطة"><?php echo htmlspecialchars(auditDisplayUserName($pdo, $group["created_by_user_id"] ?? null), ENT_QUOTES, 'UTF-8'); ?></td>
+                                        <td data-label="عدّل بواسطة"><?php echo htmlspecialchars(auditDisplayUserName($pdo, $group["updated_by_user_id"] ?? null), ENT_QUOTES, 'UTF-8'); ?></td>
+                                        <td data-label="الإجراءات">
+                                            <div class="inline-actions">
+                                                <a href="groups.php?edit=<?php echo (int)$group["id"]; ?>" class="btn btn-warning" aria-label="تعديل المجموعة">✏️</a>
+                                                <form method="POST" class="inline-form">
+                                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION["groups_csrf_token"], ENT_QUOTES, 'UTF-8'); ?>">
+                                                    <input type="hidden" name="action" value="delete">
+                                                    <input type="hidden" name="group_id" value="<?php echo (int)$group["id"]; ?>">
+                                                    <button type="submit" class="btn btn-danger" aria-label="حذف المجموعة" onclick="return confirm('هل أنت متأكد من حذف المجموعة؟')">🗑️</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+</div>
+
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+<script id="groupDayLabels" type="application/json"><?php echo json_encode(PLAYER_DAY_OPTIONS, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
+<script id="groupInitialDays" type="application/json"><?php echo json_encode(array_values($formData["training_day_keys"]), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
+<script src="assets/js/script.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const trainingDaysCountInput = document.getElementById('training_days_count');
+    const trainingDaysContainer = document.getElementById('groupTrainingDaysContainer');
+    const trainingDaysHelper = document.getElementById('groupTrainingDaysHelper');
+    const dayLabels = JSON.parse(document.getElementById('groupDayLabels').textContent || '{}');
+    let selectedDays = JSON.parse(document.getElementById('groupInitialDays').textContent || '[]');
+
+    const updateHelper = function (requiredCount) {
+        if (!trainingDaysHelper) {
+            return;
+        }
+        if (!requiredCount) {
+            trainingDaysHelper.textContent = 'حدد عدد الأيام المطلوب أولًا.';
+            return;
+        }
+        trainingDaysHelper.textContent = 'اختر ' + requiredCount + ' يوم تمرين للمجموعة. المختار الآن: ' + selectedDays.length;
+    };
+
+    const renderTrainingDays = function () {
+        if (!trainingDaysContainer || !trainingDaysCountInput) {
+            return;
+        }
+
+        const requiredCount = Math.max(0, Number(trainingDaysCountInput.value || 0));
+        selectedDays = selectedDays.filter(function (dayKey) {
+            return !!dayLabels[dayKey];
+        }).slice(0, requiredCount);
+
+        trainingDaysContainer.innerHTML = '';
+        Object.keys(dayLabels).forEach(function (dayKey) {
+            const wrapper = document.createElement('label');
+            wrapper.className = 'trainer-day-chip';
+
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.name = 'training_day_keys[]';
+            input.value = dayKey;
+            input.checked = selectedDays.indexOf(dayKey) !== -1;
+            input.disabled = requiredCount === 0;
+            input.addEventListener('change', function () {
+                const checkedInputs = Array.from(trainingDaysContainer.querySelectorAll('input:checked')).map(function (element) {
+                    return element.value;
+                });
+                if (checkedInputs.length > requiredCount) {
+                    input.checked = false;
+                    return;
+                }
+                selectedDays = checkedInputs;
+                updateHelper(requiredCount);
+            });
+
+            const text = document.createElement('span');
+            text.textContent = dayLabels[dayKey];
+            wrapper.appendChild(input);
+            wrapper.appendChild(text);
+            if (requiredCount === 0) {
+                wrapper.classList.add('is-disabled');
+            }
+            trainingDaysContainer.appendChild(wrapper);
+        });
+
+        updateHelper(requiredCount);
+    };
+
+    if (trainingDaysCountInput) {
+        trainingDaysCountInput.addEventListener('input', renderTrainingDays);
+    }
+
+    renderTrainingDays();
+});
+</script>
+</body>
+</html>
