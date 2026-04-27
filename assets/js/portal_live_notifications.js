@@ -11,7 +11,8 @@
         return;
     }
 
-    var pollIntervalMs = Math.max(7000, parseInt(cfg.pollIntervalMs, 10) || 10000);
+    var pollIntervalMs = Math.max(10000, parseInt(cfg.pollIntervalMs, 10) || 10000);
+    var maxPollIntervalMs = Math.max(pollIntervalMs, parseInt(cfg.maxPollIntervalMs, 10) || 30000);
     var reloadDelayMs = Math.max(800, parseInt(cfg.reloadDelayMs, 10) || 1400);
     var noticeDurationMs = Math.max(3500, parseInt(cfg.noticeDurationMs, 10) || 8000);
     var topOffsetPx = Math.max(56, parseInt(cfg.topOffsetPx, 10) || 88);
@@ -20,6 +21,9 @@
     var pendingReload = false;
     var noticeTimer = null;
     var reloadTimer = null;
+    var pollingStopped = false;
+    var currentPollIntervalMs = pollIntervalMs;
+    var stablePollCount = 0;
     var latestNotification = normalizeNotification(cfg.latestNotification);
     var lastKnownNotificationId = 0;
 
@@ -57,6 +61,29 @@
 
     function normalizeText(value) {
         return typeof value === "string" ? value.trim() : "";
+    }
+
+    function resetPollingCadence() {
+        stablePollCount = 0;
+        currentPollIntervalMs = pollIntervalMs;
+    }
+
+    function relaxPollingCadence() {
+        stablePollCount++;
+        if (stablePollCount >= 3) {
+            currentPollIntervalMs = Math.min(maxPollIntervalMs, currentPollIntervalMs + 5000);
+            stablePollCount = 0;
+        }
+    }
+
+    function scheduleNextPoll(delayMs) {
+        if (pollingStopped) {
+            return;
+        }
+        if (pollTimer) {
+            clearTimeout(pollTimer);
+        }
+        pollTimer = window.setTimeout(poll, typeof delayMs === "number" ? delayMs : currentPollIntervalMs);
     }
 
     function buildEndpointUrl() {
@@ -285,6 +312,7 @@
         latestNotification = notification;
         lastKnownNotificationId = notification.id;
         writeStoredId(notification.id);
+        resetPollingCadence();
         syncAndroidState(notification);
         showNotice(notification);
         notifyAndroid(notification);
@@ -292,7 +320,10 @@
     }
 
     function poll() {
-        if (inFlight || document.hidden) {
+        if (pollingStopped || inFlight) {
+            return;
+        }
+        if (document.hidden) {
             return;
         }
         inFlight = true;
@@ -314,6 +345,7 @@
             })
             .then(function (payload) {
                 if (!payload) {
+                    relaxPollingCadence();
                     return;
                 }
                 if (typeof payload.session_key === "string" && payload.session_key.trim() !== "") {
@@ -322,6 +354,7 @@
                 var notification = normalizeNotification(payload.notification);
                 syncAndroidState(notification || latestNotification);
                 if (!notification) {
+                    relaxPollingCadence();
                     return;
                 }
 
@@ -334,16 +367,24 @@
 
                 latestNotification = notification;
                 lastKnownNotificationId = Math.max(baselineId, notification.id);
+                relaxPollingCadence();
             })
-            .catch(function () {})
+            .catch(function () {
+                stablePollCount = 0;
+                currentPollIntervalMs = Math.min(maxPollIntervalMs, currentPollIntervalMs + 5000);
+            })
             .then(function () {
                 inFlight = false;
+                if (!document.hidden) {
+                    scheduleNextPoll();
+                }
             });
     }
 
     function stop() {
+        pollingStopped = true;
         if (pollTimer) {
-            clearInterval(pollTimer);
+            clearTimeout(pollTimer);
             pollTimer = null;
         }
     }
@@ -355,9 +396,11 @@
     }
 
     function start() {
+        pollingStopped = false;
         var storedId = readStoredId();
         lastKnownNotificationId = Math.max(storedId, latestNotification ? latestNotification.id : 0);
         syncAndroidState(latestNotification);
+        resetPollingCadence();
 
         if (
             cfg.showInitialLatest === true &&
@@ -374,11 +417,18 @@
         }
 
         poll();
-        pollTimer = setInterval(poll, pollIntervalMs);
     }
 
     document.addEventListener("visibilitychange", function () {
-        if (!document.hidden) {
+        if (document.hidden) {
+            if (pollTimer) {
+                clearTimeout(pollTimer);
+                pollTimer = null;
+            }
+            return;
+        }
+        if (!pollingStopped) {
+            resetPollingCadence();
             poll();
             markActivity();
         }

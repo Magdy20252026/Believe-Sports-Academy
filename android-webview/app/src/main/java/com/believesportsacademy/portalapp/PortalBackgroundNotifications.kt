@@ -27,10 +27,9 @@ internal object PortalBackgroundNotifications {
 
     private const val PREFS_NAME = "portal_background_notifications"
     private const val ACTIVE_SESSION_KEY = "active_session_key"
-    // Five minutes is a deliberate trade-off: faster than the previous background cycle while
-    // still keeping battery/network usage within a predictable bound for the three WebView apps,
-    // even though actual delivery may still be delayed by Android idle/doze/background policies.
-    private val POLL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5)
+    // Ten minutes is a balanced background cadence for the three WebView apps: noticeably more
+    // responsive than the previous 15-minute cycle without making wake-ups too aggressive.
+    private val POLL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(10)
     private const val POLL_ALARM_REQUEST_CODE = 4102
 
     fun schedule(context: Context) {
@@ -92,7 +91,7 @@ internal object PortalBackgroundNotifications {
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
             context.getString(R.string.notification_channel_name),
-            NotificationManager.IMPORTANCE_HIGH
+            NotificationManager.IMPORTANCE_DEFAULT
         ).apply {
             description = context.getString(R.string.notification_channel_description)
         }
@@ -138,7 +137,7 @@ internal object PortalBackgroundNotifications {
                     .bigText(expandedText)
                     .setSummaryText(safeTitle)
             )
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
