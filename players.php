@@ -602,9 +602,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                         $previousPlayerLevel = trim((string)($existingPlayer['player_level'] ?? ''));
                         $newPlayerLevel = trim((string)$formData['player_level']);
                         if ($previousPlayerLevel !== $newPlayerLevel) {
-                            $levelMessage = "تم تحديث مستوى اللاعب من الإدارة."
-                                . "\nالمستوى السابق: " . ($previousPlayerLevel !== '' ? $previousPlayerLevel : 'غير محدد')
-                                . "\nالمستوى الجديد: " . ($newPlayerLevel !== '' ? $newPlayerLevel : 'غير محدد');
+                            $levelMessage = sprintf(
+                                "تم تحديث مستوى اللاعب من الإدارة.\nالمستوى السابق: %s\nالمستوى الجديد: %s",
+                                $previousPlayerLevel !== '' ? $previousPlayerLevel : 'غير محدد',
+                                $newPlayerLevel !== '' ? $newPlayerLevel : 'غير محدد'
+                            );
                             createPlayerNotification(
                                 $pdo,
                                 $currentGameId,
