@@ -1751,14 +1751,27 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     };
     const parseDateInputValue = function (value) {
-        if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        if (!value) {
             return null;
         }
 
-        const parts = value.split('-').map(Number);
-        const year = parts[0];
-        const monthIndex = parts[1] - 1;
-        const day = parts[2];
+        let year;
+        let monthIndex;
+        let day;
+        if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            const parts = value.split('-').map(Number);
+            year = parts[0];
+            monthIndex = parts[1] - 1;
+            day = parts[2];
+        } else if (/^\d{2}-\d{2}-\d{4}$/.test(value)) {
+            const parts = value.split('-').map(Number);
+            day = parts[0];
+            monthIndex = parts[1] - 1;
+            year = parts[2];
+        } else {
+            return null;
+        }
+
         const parsedDate = new Date(year, monthIndex, day);
         if (
             Number.isNaN(parsedDate.getTime())
