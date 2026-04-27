@@ -27,9 +27,9 @@ internal object PortalBackgroundNotifications {
 
     private const val PREFS_NAME = "portal_background_notifications"
     private const val ACTIVE_SESSION_KEY = "active_session_key"
-    // Polling is rescheduled for roughly every 5 minutes after each poll completes to improve
-    // delivery after app closure while still respecting Android background limits. Actual
-    // delivery may be delayed further by
+    // Five minutes is a deliberate trade-off: faster than the previous background cycle while
+    // still keeping battery/network usage within a predictable bound for the three WebView apps.
+    // Actual delivery may still be delayed further by
     // Android idle/doze/background execution policies.
     private val POLL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5)
     private const val POLL_ALARM_REQUEST_CODE = 4102
@@ -131,7 +131,7 @@ internal object PortalBackgroundNotifications {
             .setLargeIcon(logoBitmap)
             .setColor(ContextCompat.getColor(context, R.color.portal_primary))
             .setContentTitle(appName)
-            .setContentText(expandedText.replace("\n", " • "))
+            .setContentText(safeMessage)
             .setSubText(safeTitle)
             .setStyle(
                 NotificationCompat.BigTextStyle()
