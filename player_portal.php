@@ -254,7 +254,7 @@ try {
 
 $notifications = [];
 $unreadNotificationCount = 0;
-$markedNotificationsAsRead = false;
+$latestNotification = null;
 try {
     $notifications = fetchPlayerPortalNotifications(
         $pdo,
@@ -267,6 +267,9 @@ try {
     foreach ($notifications as $notificationRow) {
         if ((int)($notificationRow["is_read"] ?? 0) === 0) {
             $unreadNotificationCount++;
+            if ($latestNotification === null) {
+                $latestNotification = $notificationRow;
+            }
             if ($activeSection === "home") {
                 $unreadNotificationIds[] = (int)$notificationRow["id"];
             }
@@ -276,21 +279,9 @@ try {
     if ($activeSection === "home" && $unreadNotificationCount > 0) {
         markPlayerPortalNotificationsAsRead($pdo, $playerId, $unreadNotificationIds);
         $unreadNotificationCount = 0;
-        $markedNotificationsAsRead = true;
+        $latestNotification = null;
     }
 } catch (Throwable $ignored) {}
-$latestNotification = null;
-if (!$markedNotificationsAsRead) {
-    foreach ($notifications as $notificationRow) {
-        if ((int)($notificationRow["is_read"] ?? 0) === 0) {
-            $latestNotification = $notificationRow;
-            break;
-        }
-    }
-}
-if ($latestNotification === null) {
-    $latestNotification = $notifications[0] ?? null;
-}
 
 function pportFmtDate($d) {
     $d = trim((string)$d);
