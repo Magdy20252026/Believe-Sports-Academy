@@ -992,11 +992,12 @@ window.__PORTAL_SESSION_GUARD__ = {
 <script src="assets/js/script.js"></script>
 <script>
 (function() {
+    var MOBILE_BREAKPOINT = '900px';
     var burger = document.getElementById('ppBurger');
     var sidebar = document.getElementById('ppSidebar');
     var sidebarOverlay = document.getElementById('ppSidebarOverlay');
     var sidebarLinks = sidebar ? sidebar.querySelectorAll('.pp-side-item') : [];
-    var mobileMq = window.matchMedia('(max-width: 900px)');
+    var mobileMq = window.matchMedia('(max-width: ' + MOBILE_BREAKPOINT + ')');
 
     function openMobileSidebar() {
         if (!sidebar) return;
@@ -1054,7 +1055,7 @@ window.__PORTAL_SESSION_GUARD__ = {
                 }
             } else {
                 syncDesktopSidebarState();
-                sidebar.classList.toggle('collapsed');
+                burger.setAttribute('aria-expanded', sidebar.classList.toggle('collapsed') ? 'false' : 'true');
             }
         });
     }
