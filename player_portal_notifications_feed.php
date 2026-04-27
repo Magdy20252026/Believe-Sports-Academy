@@ -37,7 +37,7 @@ if ($playerId <= 0 || $playerGameId <= 0) {
 
 try {
     $playerStmt = $pdo->prepare(
-        "SELECT id, group_id, group_level
+        "SELECT id, game_id, group_id, group_level, subscription_start_date, subscription_end_date, total_trainings
          FROM players
          WHERE id = ? AND game_id = ?
          LIMIT 1"
@@ -54,6 +54,8 @@ try {
         ], JSON_UNESCAPED_UNICODE);
         exit;
     }
+
+    ensurePlayerSubscriptionStatusNotifications($pdo, $playerRow);
 
     $notifications = fetchPlayerPortalNotifications(
         $pdo,

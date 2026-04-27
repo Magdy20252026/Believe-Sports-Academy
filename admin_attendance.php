@@ -865,19 +865,22 @@ function handleAdminAttendanceScan(PDO $pdo, array $admin, DateTimeImmutable $no
     $dayKey = getAdminAttendanceDayKeyFromDate($now);
     $adminDayKeys = $admin["day_keys"] ?? [];
     $daySchedule = getAdminAttendanceScheduleForDay($admin, $dayKey);
-
-    if (in_array($dayKey, $adminDayKeys, true)) {
-        return [
-            "success" => false,
-            "message" => "اليوم إجازة هذا الإداري.",
-        ];
-    }
+    $isDayOff = in_array($dayKey, $adminDayKeys, true);
+    $dayOffNotice = $isDayOff ? " تنبيه: اليوم إجازة هذا الإداري وتم تسجيل العملية بناءً على طلب المستخدم." : "";
 
     if (!is_array($daySchedule)) {
-        return [
-            "success" => false,
-            "message" => "لا يوجد ميعاد عمل مسجل لهذا الإداري اليوم.",
-        ];
+        if ($isDayOff) {
+            $fallbackTime = $now->format("H:i:s");
+            $daySchedule = [
+                "attendance_time" => $fallbackTime,
+                "departure_time" => $fallbackTime,
+            ];
+        } else {
+            return [
+                "success" => false,
+                "message" => "لا يوجد ميعاد عمل مسجل لهذا الإداري اليوم.",
+            ];
+        }
     }
 
     $pdo->beginTransaction();
@@ -893,7 +896,13 @@ function handleAdminAttendanceScan(PDO $pdo, array $admin, DateTimeImmutable $no
         $existingRecord = $recordStmt->fetch();
 
         if (!$existingRecord) {
-            $arrival = calculateAdminArrivalStatus($now, $daySchedule["attendance_time"]);
+            $arrival = $isDayOff
+                ? [
+                    "status" => "حضور في يوم الإجازة",
+                    "minutes_late" => 0,
+                    "is_absent" => false,
+                ]
+                : calculateAdminArrivalStatus($now, $daySchedule["attendance_time"]);
             $insertStmt = $pdo->prepare(
                 "INSERT INTO admin_attendance (
                     game_id,
@@ -924,7 +933,7 @@ function handleAdminAttendanceScan(PDO $pdo, array $admin, DateTimeImmutable $no
             if (!empty($arrival["is_absent"])) {
                 return [
                     "success" => true,
-                    "message" => "تم احتساب " . $admin["name"] . " غياباً بسبب تأخير " . (int)$arrival["minutes_late"] . " دقيقة",
+                    "message" => "تم احتساب " . $admin["name"] . " غياباً بسبب تأخير " . (int)$arrival["minutes_late"] . " دقيقة" . $dayOffNotice,
                 ];
             }
 
@@ -935,7 +944,7 @@ function handleAdminAttendanceScan(PDO $pdo, array $admin, DateTimeImmutable $no
 
             return [
                 "success" => true,
-                "message" => "تم تسجيل حضور " . $admin["name"] . " - " . $message,
+                "message" => "تم تسجيل حضور " . $admin["name"] . " - " . $message . $dayOffNotice,
             ];
         }
 
@@ -955,7 +964,13 @@ function handleAdminAttendanceScan(PDO $pdo, array $admin, DateTimeImmutable $no
             ];
         }
 
-        $departure = calculateAdminDepartureStatus($now, $daySchedule["departure_time"]);
+        $departure = $isDayOff
+            ? [
+                "status" => "انصراف في يوم الإجازة",
+                "minutes_early" => 0,
+                "overtime_minutes" => 0,
+            ]
+            : calculateAdminDepartureStatus($now, $daySchedule["departure_time"]);
         $updateStmt = $pdo->prepare(
             "UPDATE admin_attendance
              SET departure_at = ?,
@@ -986,7 +1001,7 @@ function handleAdminAttendanceScan(PDO $pdo, array $admin, DateTimeImmutable $no
 
         return [
             "success" => true,
-            "message" => "تم تسجيل انصراف " . $admin["name"] . " - " . $message,
+            "message" => "تم تسجيل انصراف " . $admin["name"] . " - " . $message . $dayOffNotice,
         ];
     } catch (Throwable $throwable) {
         if ($pdo->inTransaction()) {

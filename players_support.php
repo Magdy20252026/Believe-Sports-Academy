@@ -549,6 +549,30 @@ function ensurePlayerNotificationReadsTable(PDO $pdo)
             read_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (notification_id, player_id),
             KEY idx_player_notification_reads_player (player_id, read_at)
+         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+}
+
+function ensurePlayerSubscriptionAlertsTable(PDO $pdo)
+{
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS player_subscription_alerts (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            player_id INT(11) NOT NULL,
+            game_id INT(11) NOT NULL,
+            alert_key VARCHAR(50) NOT NULL,
+            subscription_start_date DATE NOT NULL,
+            subscription_end_date DATE NOT NULL,
+            created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY unique_player_subscription_alert (
+                player_id,
+                alert_key,
+                subscription_start_date,
+                subscription_end_date
+            ),
+            KEY idx_player_subscription_alerts_game (game_id),
+            KEY idx_player_subscription_alerts_player (player_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
     );
 }
@@ -685,6 +709,165 @@ function createPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $message
     }
 
     return false;
+}
+
+function fetchPlayerConsumedSessionsCount(PDO $pdo, $playerId, $subscriptionStartDate, $subscriptionEndDate)
+{
+    if ((int)$playerId <= 0 || !isValidPlayerDate($subscriptionStartDate) || !isValidPlayerDate($subscriptionEndDate)) {
+        return 0;
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM player_attendance
+         WHERE player_id = ?
+           AND attendance_date BETWEEN ? AND ?"
+    );
+    $stmt->execute([
+        (int)$playerId,
+        (string)$subscriptionStartDate,
+        (string)$subscriptionEndDate,
+    ]);
+
+    return (int)$stmt->fetchColumn();
+}
+
+function registerPlayerSubscriptionAlert(PDO $pdo, array $player, $alertKey, $title, $message, $displayDate = null, $userId = null)
+{
+    ensurePlayerSubscriptionAlertsTable($pdo);
+
+    $playerId = (int)($player['id'] ?? 0);
+    $gameId = (int)($player['game_id'] ?? 0);
+    $subscriptionStartDate = trim((string)($player['subscription_start_date'] ?? ''));
+    $subscriptionEndDate = trim((string)($player['subscription_end_date'] ?? ''));
+    $alertKey = trim((string)$alertKey);
+
+    if (
+        $playerId <= 0
+        || $gameId <= 0
+        || $alertKey === ''
+        || !isValidPlayerDate($subscriptionStartDate)
+        || !isValidPlayerDate($subscriptionEndDate)
+    ) {
+        return false;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "INSERT IGNORE INTO player_subscription_alerts (
+                player_id,
+                game_id,
+                alert_key,
+                subscription_start_date,
+                subscription_end_date
+             ) VALUES (?, ?, ?, ?, ?)"
+        );
+        $stmt->execute([
+            $playerId,
+            $gameId,
+            $alertKey,
+            $subscriptionStartDate,
+            $subscriptionEndDate,
+        ]);
+
+        if ($stmt->rowCount() < 1) {
+            return false;
+        }
+
+        if (createPlayerNotification($pdo, $gameId, $playerId, $title, $message, 'alert', 'important', $displayDate, $userId)) {
+            return true;
+        }
+
+        $deleteStmt = $pdo->prepare(
+            "DELETE FROM player_subscription_alerts
+             WHERE player_id = ?
+               AND alert_key = ?
+               AND subscription_start_date = ?
+               AND subscription_end_date = ?"
+        );
+        $deleteStmt->execute([
+            $playerId,
+            $alertKey,
+            $subscriptionStartDate,
+            $subscriptionEndDate,
+        ]);
+    } catch (Throwable $throwable) {
+        error_log('Failed to register player subscription alert: ' . $throwable->getMessage());
+    }
+
+    return false;
+}
+
+function ensurePlayerSubscriptionStatusNotifications(PDO $pdo, array $player, ?DateTimeImmutable $today = null, $userId = null)
+{
+    $playerId = (int)($player['id'] ?? 0);
+    $gameId = (int)($player['game_id'] ?? 0);
+    $subscriptionStartDate = trim((string)($player['subscription_start_date'] ?? ''));
+    $subscriptionEndDate = trim((string)($player['subscription_end_date'] ?? ''));
+
+    if (
+        $playerId <= 0
+        || $gameId <= 0
+        || !isValidPlayerDate($subscriptionStartDate)
+        || !isValidPlayerDate($subscriptionEndDate)
+    ) {
+        return;
+    }
+
+    $today = $today ?: new DateTimeImmutable('today', new DateTimeZone('Africa/Cairo'));
+    if (createPlayerDate($subscriptionStartDate) > $today) {
+        return;
+    }
+
+    $consumedSessionsCount = fetchPlayerConsumedSessionsCount($pdo, $playerId, $subscriptionStartDate, $subscriptionEndDate);
+    $daysRemaining = calculatePlayerDaysRemaining($subscriptionEndDate, $today);
+    $remainingTrainings = calculatePlayerRemainingTrainings($player['total_trainings'] ?? 0, $consumedSessionsCount);
+    $displayDate = $today->format('Y-m-d');
+
+    if ($daysRemaining === 1 && $remainingTrainings > 0) {
+        registerPlayerSubscriptionAlert(
+            $pdo,
+            $player,
+            'subscription_expires_tomorrow',
+            '⏳ اشتراكك ينتهي غدًا',
+            "تنبيه: يتبقى يوم واحد فقط على نهاية اشتراكك.\nيرجى مراجعة الإدارة لتجديد الاشتراك قبل تاريخ " . createPlayerDate($subscriptionEndDate)->format('Y/m/d') . ".",
+            $displayDate,
+            $userId
+        );
+    }
+
+    if ($remainingTrainings === 1 && $daysRemaining > 0) {
+        registerPlayerSubscriptionAlert(
+            $pdo,
+            $player,
+            'one_training_left',
+            '🏃 متبقي لك تمرينة واحدة',
+            "تنبيه: متبقي لك تمرينة واحدة فقط في اشتراكك الحالي.\nيرجى التواصل مع الإدارة لتجديد الاشتراك في الوقت المناسب.",
+            $displayDate,
+            $userId
+        );
+    }
+
+    if ($daysRemaining === 0 || $remainingTrainings === 0) {
+        $messageLines = ['انتهى اشتراكك الحالي.'];
+        if ($daysRemaining === 0) {
+            $messageLines[] = 'سبب الانتهاء: تم الوصول إلى تاريخ نهاية الاشتراك.';
+        }
+        if ($remainingTrainings === 0) {
+            $messageLines[] = 'سبب الانتهاء: تم استهلاك جميع التمرينات المتاحة.';
+        }
+        $messageLines[] = 'يرجى مراجعة الإدارة لتجديد الاشتراك.';
+
+        registerPlayerSubscriptionAlert(
+            $pdo,
+            $player,
+            'subscription_ended',
+            '📛 انتهى اشتراكك',
+            implode("\n", $messageLines),
+            $displayDate,
+            $userId
+        );
+    }
 }
 
 function notifyPlayerLevelChanged(PDO $pdo, $gameId, $playerId, $previousPlayerLevel, $newPlayerLevel, $userId = null)

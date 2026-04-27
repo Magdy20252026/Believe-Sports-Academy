@@ -183,6 +183,12 @@ if (!$player) {
     exit;
 }
 
+try {
+    ensurePlayerSubscriptionStatusNotifications($pdo, $player);
+} catch (Throwable $throwable) {
+    error_log("Failed to ensure player subscription notifications: " . $throwable->getMessage());
+}
+
 $attendanceRows = [];
 try {
     $stmt = $pdo->prepare(
