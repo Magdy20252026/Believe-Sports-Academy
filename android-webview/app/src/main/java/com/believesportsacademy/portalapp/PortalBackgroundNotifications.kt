@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.random.Random
 
@@ -27,8 +28,8 @@ internal object PortalBackgroundNotifications {
     private const val ACTIVE_SESSION_KEY = "active_session_key"
     // 15 minutes is our target polling window to balance delivery after app closure with battery use.
     // Actual delivery may be delayed further by Android idle/doze/background execution policies.
-    private const val POLL_INTERVAL_MS = 15 * 60 * 1000L
-    private const val REQUEST_CODE_POLL = 4102
+    private val POLL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(15)
+    private const val POLL_ALARM_REQUEST_CODE = 4102
 
     fun schedule(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
@@ -205,7 +206,7 @@ internal object PortalBackgroundNotifications {
         val intent = Intent(context, PortalNotificationPollReceiver::class.java)
         return PendingIntent.getBroadcast(
             context,
-            REQUEST_CODE_POLL,
+            POLL_ALARM_REQUEST_CODE,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
