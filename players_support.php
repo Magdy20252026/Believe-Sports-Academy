@@ -609,7 +609,7 @@ function markPlayerPortalNotificationsAsRead(PDO $pdo, $playerId, array $notific
     $stmt = $pdo->prepare(
         "INSERT INTO player_notification_reads (notification_id, player_id)
          VALUES " . implode(", ", $placeholders) . "
-         ON DUPLICATE KEY UPDATE read_at = read_at"
+         ON DUPLICATE KEY UPDATE read_at = CURRENT_TIMESTAMP"
     );
     $stmt->execute($params);
 }

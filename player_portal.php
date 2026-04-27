@@ -263,7 +263,7 @@ try {
         (int)$player["group_id"],
         $currentLevel
     );
-    $shouldMarkNotificationsAsRead = ($activeSection === "home");
+    $shouldMarkNotificationsAsRead = isset($activeSection) && $activeSection === "home";
     $unreadNotificationIds = [];
     foreach ($notifications as $index => $notificationRow) {
         if ((int)($notificationRow["is_read"] ?? 0) === 0) {
