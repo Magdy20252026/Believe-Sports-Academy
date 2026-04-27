@@ -46,7 +46,7 @@ function startPortalSession($portalKey)
             'samesite' => 'Lax',
         ]);
     } else {
-        session_set_cookie_params($lifetime, '/; samesite=Lax', '', $isSecure, true);
+        session_set_cookie_params($lifetime, '/', '', $isSecure, true);
     }
 
     session_start();

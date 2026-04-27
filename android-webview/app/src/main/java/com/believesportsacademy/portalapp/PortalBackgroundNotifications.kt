@@ -30,12 +30,13 @@ internal object PortalBackgroundNotifications {
 
     fun schedule(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
-        alarmManager.setInexactRepeating(
-            AlarmManager.RTC_WAKEUP,
-            System.currentTimeMillis() + POLL_INTERVAL_MS,
-            POLL_INTERVAL_MS,
-            buildPollPendingIntent(context)
-        )
+        val triggerAtMillis = System.currentTimeMillis() + POLL_INTERVAL_MS
+        val pendingIntent = buildPollPendingIntent(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+        } else {
+            alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+        }
     }
 
     fun hasActivePortalSession(context: Context): Boolean {
@@ -236,6 +237,7 @@ class PortalNotificationPollReceiver : BroadcastReceiver() {
             try {
                 PortalBackgroundNotifications.pollOnce(context.applicationContext)
             } finally {
+                PortalBackgroundNotifications.schedule(context.applicationContext)
                 pendingResult.finish()
             }
         }
