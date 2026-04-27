@@ -655,7 +655,7 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
                 <h2>أهلاً، <?php echo htmlspecialchars($admin["name"], ENT_QUOTES, "UTF-8"); ?> 👋</h2>
                 <p>
                     <?php echo htmlspecialchars((string)($admin["game_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>
-                    &bull; آخر تحديث: <?php echo date("Y/m/d H:i"); ?>
+                    &bull; آخر تحديث: <?php echo htmlspecialchars(adminPortalFormatDatetime(date("Y-m-d H:i:s")), ENT_QUOTES, "UTF-8"); ?>
                 </p>
             </div>
             <div class="portal-welcome-avatar">🛡️</div>

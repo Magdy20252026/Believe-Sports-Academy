@@ -290,6 +290,16 @@ function pportFmtDate($d) {
         return $dt->format("Y/m/d");
     } catch (Exception $ex) { return "—"; }
 }
+function pportFmtTime($time) {
+    $time = substr((string)$time, 0, 5);
+    if (!preg_match('/^(\d{2}):(\d{2})$/', $time, $m)) return "—";
+    $hour = (int)$m[1];
+    $min = $m[2];
+    $period = $hour >= 12 ? "م" : "ص";
+    $display = $hour % 12;
+    if ($display === 0) $display = 12;
+    return str_pad((string)$display, 2, "0", STR_PAD_LEFT) . ":" . $min . " " . $period;
+}
 function pportFmtDateTime($d) {
     $d = trim((string)$d);
     if ($d === "" || $d === "0000-00-00 00:00:00") return "—";
@@ -785,7 +795,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
                                 <div class="pp-info-item"><div class="pp-info-lbl">أيام التدريب</div><div class="pp-info-val"><?php echo pportEsc(implode("، ", $trainingDays)); ?></div></div>
                             <?php endif; ?>
                             <?php if (!empty($player["training_time"])): ?>
-                                <div class="pp-info-item"><div class="pp-info-lbl">موعد التمرين</div><div class="pp-info-val" dir="ltr"><?php echo pportEsc(substr((string)$player["training_time"], 0, 5)); ?></div></div>
+                                <div class="pp-info-item"><div class="pp-info-lbl">موعد التمرين</div><div class="pp-info-val" dir="ltr"><?php echo pportEsc(pportFmtTime($player["training_time"])); ?></div></div>
                             <?php endif; ?>
                             <div class="pp-info-item"><div class="pp-info-lbl">إجمالي التمارين</div><div class="pp-info-val"><?php echo (int)$player["total_trainings"]; ?></div></div>
                             <div class="pp-info-item"><div class="pp-info-lbl">قيمة الاشتراك</div><div class="pp-info-val"><?php echo pportFmtCurrency($player["subscription_price"]); ?></div></div>
