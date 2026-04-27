@@ -1133,6 +1133,12 @@ window.__PORTAL_SESSION_GUARD__ = {
         liveNoticeTitle.textContent = notification.title || '📣 إشعار جديد';
         liveNoticeMessage.textContent = notification.message || '';
         liveNotice.classList.add('show');
+        if (window.AndroidBridge && typeof window.AndroidBridge.showNotification === 'function') {
+            window.AndroidBridge.showNotification(
+                liveNoticeTitle.textContent,
+                liveNoticeMessage.textContent
+            );
+        }
         liveNoticeTimer = setTimeout(hideLiveNotice, LIVE_NOTICE_DURATION_MS);
     }
 
