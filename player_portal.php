@@ -253,23 +253,39 @@ try {
 } catch (PDOException $ignored) {}
 
 $notifications = [];
+$unreadNotificationCount = 0;
+$latestNotification = null;
 try {
-    $stmt = $pdo->prepare(
-        "SELECT id, title, message, notification_type, priority_level, target_scope, display_date, created_at
-         FROM player_notifications
-         WHERE game_id = ? AND visibility_status = 'visible'
-           AND (
-                target_scope = 'all'
-                OR (target_scope = 'level' AND target_group_level = ?)
-                OR (target_scope = 'group' AND target_group_id = ?)
-                OR (target_scope = 'player' AND target_player_id = ?)
-           )
-         ORDER BY display_date DESC, id DESC LIMIT 50"
+    $notifications = fetchPlayerPortalNotifications(
+        $pdo,
+        $playerGameId,
+        $playerId,
+        (int)$player["group_id"],
+        $currentLevel
     );
-    $stmt->execute([$playerGameId, $currentLevel, (int)$player["group_id"], $playerId]);
-    $notifications = $stmt->fetchAll();
-} catch (PDOException $ignored) {}
-$latestNotification = $notifications[0] ?? null;
+    $shouldMarkNotificationsAsRead = isset($activeSection) && $activeSection === "home";
+    $unreadNotificationIds = [];
+    foreach ($notifications as $index => $notificationRow) {
+        if ((int)($notificationRow["is_read"] ?? 0) === 0) {
+            $unreadNotificationCount++;
+            if ($latestNotification === null) {
+                $latestNotification = $notificationRow;
+            }
+            if ($shouldMarkNotificationsAsRead) {
+                $unreadNotificationIds[] = (int)$notificationRow["id"];
+                $notifications[$index]["is_read"] = 1;
+            }
+        }
+    }
+
+    if ($shouldMarkNotificationsAsRead && $unreadNotificationCount > 0) {
+        markPlayerPortalNotificationsAsRead($pdo, $playerId, $unreadNotificationIds);
+        $unreadNotificationCount = 0;
+        $latestNotification = null;
+    }
+} catch (Throwable $throwable) {
+    error_log("Failed to load player portal notifications: " . $throwable->getMessage());
+}
 
 function pportFmtDate($d) {
     $d = trim((string)$d);
@@ -629,8 +645,8 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
         <div class="pp-topbar-r">
             <a href="?section=home" class="pp-alert-link" aria-label="الإشعارات">
                 🔔
-                <?php if (count($notifications) > 0): ?>
-                    <span class="pp-alert-count"><?php echo count($notifications); ?></span>
+                <?php if ($unreadNotificationCount > 0): ?>
+                    <span class="pp-alert-count"><?php echo $unreadNotificationCount; ?></span>
                 <?php endif; ?>
             </a>
             <div class="pp-user"><span>👤</span><span><?php echo pportEsc($player["name"]); ?></span></div>

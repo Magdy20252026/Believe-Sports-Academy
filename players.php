@@ -600,23 +600,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                             savePentathlonPlayerSubGameSessions($pdo, $formData['id'], $currentGameId, $pentathlonInputSessions);
                         }
                         $previousPlayerLevel = trim((string)($existingPlayer['player_level'] ?? ''));
-                        $previousGroupLevel = trim((string)($existingPlayer['group_level'] ?? ''));
                         $newPlayerLevel = trim((string)$formData['player_level']);
-                        $newGroupLevel = trim((string)$selectedGroup['group_level']);
-                        if ($previousPlayerLevel !== $newPlayerLevel || $previousGroupLevel !== $newGroupLevel) {
-                            $levelMessage = ["تم تحديث مستواك من الإدارة."];
-                            if ($previousPlayerLevel !== $newPlayerLevel) {
-                                $levelMessage[] = "مستوى اللاعب الجديد: " . ($newPlayerLevel !== '' ? $newPlayerLevel : 'غير محدد');
-                            }
-                            if ($previousGroupLevel !== $newGroupLevel) {
-                                $levelMessage[] = "مستوى المجموعة الحالي: " . ($newGroupLevel !== '' ? $newGroupLevel : 'غير محدد');
-                            }
+                        if ($previousPlayerLevel !== $newPlayerLevel) {
+                            $levelMessage = sprintf(
+                                "تم تحديث مستوى اللاعب من الإدارة.\nالمستوى السابق: %s\nالمستوى الجديد: %s",
+                                $previousPlayerLevel !== '' ? $previousPlayerLevel : 'غير محدد',
+                                $newPlayerLevel !== '' ? $newPlayerLevel : 'غير محدد'
+                            );
                             createPlayerNotification(
                                 $pdo,
                                 $currentGameId,
                                 $formData['id'],
                                 '🏆 تم تحديث المستوى',
-                                implode("\n", $levelMessage),
+                                $levelMessage,
                                 'administrative',
                                 'important'
                             );
