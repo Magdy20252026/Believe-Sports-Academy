@@ -28,9 +28,8 @@ internal object PortalBackgroundNotifications {
     private const val PREFS_NAME = "portal_background_notifications"
     private const val ACTIVE_SESSION_KEY = "active_session_key"
     // Five minutes is a deliberate trade-off: faster than the previous background cycle while
-    // still keeping battery/network usage within a predictable bound for the three WebView apps.
-    // Actual delivery may still be delayed further by
-    // Android idle/doze/background execution policies.
+    // still keeping battery/network usage within a predictable bound for the three WebView apps,
+    // even though actual delivery may still be delayed by Android idle/doze/background policies.
     private val POLL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5)
     private const val POLL_ALARM_REQUEST_CODE = 4102
 

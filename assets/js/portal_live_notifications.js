@@ -58,6 +58,10 @@
         return typeof value === "string" ? value.trim() : "";
     }
 
+    function buildEndpointUrl() {
+        return cfg.endpoint + (cfg.endpoint.indexOf("?") === -1 ? "?" : "&") + "_t=" + Date.now();
+    }
+
     function normalizeNotification(notification) {
         if (!notification || typeof notification !== "object") {
             return null;
@@ -291,8 +295,7 @@
             return;
         }
         inFlight = true;
-        var requestUrl = cfg.endpoint + (cfg.endpoint.indexOf("?") === -1 ? "?" : "&") + "_t=" + Date.now();
-        fetch(requestUrl, {
+        fetch(buildEndpointUrl(), {
             method: "GET",
             credentials: "same-origin",
             cache: "no-store",
