@@ -38,13 +38,14 @@ if (!$trainer) {
 }
 
 function portalFormatTime($time) {
-    $time = substr((string)$time, 0, 5);
+    $time = trim((string)$time);
+    if (strlen($time) < 5) return "—";
+    $time = substr($time, 0, 5);
     if (!preg_match('/^(\d{2}):(\d{2})$/', $time, $m)) return "—";
     $hour = (int)$m[1];
     $min = $m[2];
     $period = $hour >= 12 ? "م" : "ص";
-    $display = $hour % 12;
-    if ($display === 0) $display = 12;
+    $display = ($hour === 0 || $hour === 12) ? 12 : ($hour % 12);
     return str_pad((string)$display, 2, "0", STR_PAD_LEFT) . ":" . $min . " " . $period;
 }
 
@@ -655,7 +656,7 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
                 <h2>أهلاً، <?php echo htmlspecialchars($trainer["name"], ENT_QUOTES, "UTF-8"); ?> 👋</h2>
                 <p>
                     <?php echo htmlspecialchars((string)($trainer["game_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>
-                    &bull; آخر تحديث: <?php echo date("Y/m/d H:i"); ?>
+                    &bull; آخر تحديث: <?php echo htmlspecialchars(portalFormatDatetime(date("Y-m-d H:i:s")), ENT_QUOTES, "UTF-8"); ?>
                 </p>
             </div>
             <div class="portal-welcome-avatar">🏋️</div>
