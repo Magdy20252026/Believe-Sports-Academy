@@ -783,6 +783,21 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                     PLAYER_ATTENDANCE_STATUS_ABSENT,
                 ]);
                 auditTrack($pdo, "create", "player_attendance", (int)$pdo->lastInsertId(), "حضور اللاعبين", "احتساب غياب بسبب التأخير للاعب: " . (string)$player["name"]);
+                $lateCutoffLabel = formatTrainingTimeDisplay($lateCutoff->format("H:i:s"));
+                $notificationLines = [
+                    "تم تسجيل غيابك بتاريخ " . $today->format("Y/m/d") . ".",
+                    "السبب: عدم تسجيل الحضور قبل " . ($lateCutoffLabel !== "" ? $lateCutoffLabel : "نهاية المهلة المحددة") . ".",
+                ];
+                createDirectPlayerNotification(
+                    $pdo,
+                    $gameId,
+                    (int)$player["id"],
+                    '🚫 تم تسجيل غياب اليوم',
+                    implode("\n", $notificationLines),
+                    'alert',
+                    'urgent',
+                    $todayDate
+                );
             }
 
             $pdo->commit();
@@ -890,6 +905,18 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                     $dayKey,
                     PLAYER_ATTENDANCE_STATUS_ABSENT,
                 ]);
+                if (isset($playersById[$candidateId])) {
+                    createDirectPlayerNotification(
+                        $pdo,
+                        $gameId,
+                        $candidateId,
+                        '🚫 تم تسجيل غياب اليوم',
+                        "تم تسجيل غيابك بتاريخ " . $today->format("Y/m/d") . ".\nيرجى مراجعة الإدارة إذا كان هذا التسجيل غير صحيح.",
+                        'alert',
+                        'important',
+                        $todayDate
+                    );
+                }
                 $autoAbsentCount++;
             }
         }

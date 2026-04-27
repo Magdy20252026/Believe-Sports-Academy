@@ -514,10 +514,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                 $error = 'لا يمكن تسجيل لاعب جديد في هذه المجموعة لأن العدد وصل إلى الحد الأقصى.';
             }
 
+            $existingPlayer = null;
             if ($error === '' && $formData['id'] > 0) {
-                $playerExistsStmt = $pdo->prepare('SELECT id FROM players WHERE id = ? AND game_id = ? LIMIT 1');
+                $playerExistsStmt = $pdo->prepare(
+                    'SELECT id, name, group_level, player_level
+                     FROM players
+                     WHERE id = ? AND game_id = ?
+                     LIMIT 1'
+                );
                 $playerExistsStmt->execute([$formData['id'], $currentGameId]);
-                if (!$playerExistsStmt->fetch()) {
+                $existingPlayer = $playerExistsStmt->fetch();
+                if (!$existingPlayer) {
                     $error = 'اللاعب غير متاح.';
                 }
             }
@@ -591,6 +598,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                                 $pentathlonInputSessions[$sg] = (int)($_POST['pentathlon_sessions'][$sg] ?? 0);
                             }
                             savePentathlonPlayerSubGameSessions($pdo, $formData['id'], $currentGameId, $pentathlonInputSessions);
+                        }
+                        $previousPlayerLevel = trim((string)($existingPlayer['player_level'] ?? ''));
+                        $previousGroupLevel = trim((string)($existingPlayer['group_level'] ?? ''));
+                        $newPlayerLevel = trim((string)$formData['player_level']);
+                        $newGroupLevel = trim((string)$selectedGroup['group_level']);
+                        if ($previousPlayerLevel !== $newPlayerLevel || $previousGroupLevel !== $newGroupLevel) {
+                            $levelMessage = ["تم تحديث مستواك من الإدارة."];
+                            if ($previousPlayerLevel !== $newPlayerLevel) {
+                                $levelMessage[] = "مستوى اللاعب الجديد: " . ($newPlayerLevel !== '' ? $newPlayerLevel : 'غير محدد');
+                            }
+                            if ($previousGroupLevel !== $newGroupLevel) {
+                                $levelMessage[] = "مستوى المجموعة الحالي: " . ($newGroupLevel !== '' ? $newGroupLevel : 'غير محدد');
+                            }
+                            createDirectPlayerNotification(
+                                $pdo,
+                                $currentGameId,
+                                $formData['id'],
+                                '🏆 تم تحديث المستوى',
+                                implode("\n", $levelMessage),
+                                'administrative',
+                                'important'
+                            );
                         }
                         auditTrack($pdo, "update", "players", $formData['id'], "اللاعبين", "تعديل بيانات لاعب: " . (string)$formData['name']);
                         $_SESSION['players_success'] = 'تم تحديث بيانات اللاعب.';

@@ -34,6 +34,8 @@ const PENTATHLON_SUB_GAMES = [
 
 function ensurePlayersTables(PDO $pdo)
 {
+    ensurePlayerNotificationsTableForPortal($pdo);
+
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS players (
             id INT(11) NOT NULL AUTO_INCREMENT,
@@ -327,6 +329,18 @@ function ensurePlayersTables(PDO $pdo)
            AND INDEX_NAME = ?
          LIMIT 1"
     );
+    $existingIndexesStmt->execute(['player_notifications', 'idx_player_notifications_player']);
+    if (!$existingIndexesStmt->fetchColumn()) {
+        try {
+            $pdo->exec(
+                "ALTER TABLE player_notifications
+                 ADD INDEX idx_player_notifications_player (game_id, target_player_id)"
+            );
+        } catch (Throwable $throwable) {
+            error_log('Failed to ensure idx_player_notifications_player exists: ' . $throwable->getMessage());
+        }
+    }
+
     $existingIndexesStmt->execute(['player_subscription_history', 'idx_player_subscription_history_latest']);
     if (!$existingIndexesStmt->fetchColumn()) {
         try {
@@ -442,6 +456,135 @@ function ensurePlayersTables(PDO $pdo)
              FOREIGN KEY (single_training_id) REFERENCES single_training_prices (id) ON DELETE RESTRICT"
         );
     }
+}
+
+function ensurePlayerNotificationsTableForPortal(PDO $pdo)
+{
+    static $alreadyEnsured = false;
+    if ($alreadyEnsured) {
+        return;
+    }
+    $alreadyEnsured = true;
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS player_notifications (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            game_id INT(11) NOT NULL,
+            title VARCHAR(160) NOT NULL,
+            message TEXT NOT NULL,
+            notification_type VARCHAR(50) NOT NULL DEFAULT 'general',
+            priority_level VARCHAR(20) NOT NULL DEFAULT 'normal',
+            visibility_status VARCHAR(20) NOT NULL DEFAULT 'visible',
+            target_scope VARCHAR(20) NOT NULL DEFAULT 'all',
+            target_group_id INT(11) NULL DEFAULT NULL,
+            target_group_name VARCHAR(150) NULL DEFAULT NULL,
+            target_group_level VARCHAR(150) NULL DEFAULT NULL,
+            target_player_id INT(11) NULL DEFAULT NULL,
+            display_date DATE NOT NULL,
+            created_by_user_id INT(11) NULL DEFAULT NULL,
+            updated_by_user_id INT(11) NULL DEFAULT NULL,
+            created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_player_notifications_game_date (game_id, display_date),
+            KEY idx_player_notifications_status (game_id, visibility_status),
+            KEY idx_player_notifications_scope (game_id, target_scope),
+            KEY idx_player_notifications_group (game_id, target_group_id),
+            KEY idx_player_notifications_player (game_id, target_player_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+
+    $requiredNotificationColumns = [
+        'title' => "ALTER TABLE player_notifications ADD COLUMN title VARCHAR(160) NOT NULL AFTER game_id",
+        'message' => "ALTER TABLE player_notifications ADD COLUMN message TEXT NOT NULL AFTER title",
+        'notification_type' => "ALTER TABLE player_notifications ADD COLUMN notification_type VARCHAR(50) NOT NULL DEFAULT 'general' AFTER message",
+        'priority_level' => "ALTER TABLE player_notifications ADD COLUMN priority_level VARCHAR(20) NOT NULL DEFAULT 'normal' AFTER notification_type",
+        'visibility_status' => "ALTER TABLE player_notifications ADD COLUMN visibility_status VARCHAR(20) NOT NULL DEFAULT 'visible' AFTER priority_level",
+        'target_scope' => "ALTER TABLE player_notifications ADD COLUMN target_scope VARCHAR(20) NOT NULL DEFAULT 'all' AFTER visibility_status",
+        'target_group_id' => "ALTER TABLE player_notifications ADD COLUMN target_group_id INT(11) NULL DEFAULT NULL AFTER target_scope",
+        'target_group_name' => "ALTER TABLE player_notifications ADD COLUMN target_group_name VARCHAR(150) NULL DEFAULT NULL AFTER target_group_id",
+        'target_group_level' => "ALTER TABLE player_notifications ADD COLUMN target_group_level VARCHAR(150) NULL DEFAULT NULL AFTER target_group_name",
+        'target_player_id' => "ALTER TABLE player_notifications ADD COLUMN target_player_id INT(11) NULL DEFAULT NULL AFTER target_group_level",
+        'display_date' => "ALTER TABLE player_notifications ADD COLUMN display_date DATE NOT NULL AFTER target_player_id",
+        'created_by_user_id' => "ALTER TABLE player_notifications ADD COLUMN created_by_user_id INT(11) NULL DEFAULT NULL AFTER display_date",
+        'updated_by_user_id' => "ALTER TABLE player_notifications ADD COLUMN updated_by_user_id INT(11) NULL DEFAULT NULL AFTER created_by_user_id",
+    ];
+
+    $existingColumnsStmt = $pdo->prepare(
+        "SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'player_notifications'
+           AND COLUMN_NAME = ?
+         LIMIT 1"
+    );
+
+    foreach ($requiredNotificationColumns as $columnName => $sql) {
+        $existingColumnsStmt->execute([$columnName]);
+        if (!$existingColumnsStmt->fetchColumn()) {
+            try {
+                $pdo->exec($sql);
+            } catch (Throwable $throwable) {
+                error_log('Failed to ensure player_notifications.' . $columnName . ' exists: ' . $throwable->getMessage());
+            }
+        }
+    }
+}
+
+function createDirectPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $message, $notificationType = 'alert', $priorityLevel = 'important', $displayDate = null, $userId = null)
+{
+    ensurePlayerNotificationsTableForPortal($pdo);
+
+    $gameId = (int)$gameId;
+    $playerId = (int)$playerId;
+    $title = trim((string)$title);
+    $message = trim((string)$message);
+    $notificationType = trim((string)$notificationType);
+    $priorityLevel = trim((string)$priorityLevel);
+    $userId = $userId !== null ? (int)$userId : (isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null);
+
+    if ($gameId <= 0 || $playerId <= 0 || $title === '' || $message === '') {
+        return false;
+    }
+
+    if (function_exists('mb_substr')) {
+        $title = mb_substr($title, 0, 160, 'UTF-8');
+        $message = mb_substr($message, 0, 3000, 'UTF-8');
+    } else {
+        $title = substr($title, 0, 160);
+        $message = substr($message, 0, 3000);
+    }
+
+    $displayDate = trim((string)$displayDate);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $displayDate)) {
+        $displayDate = (new DateTimeImmutable('now', new DateTimeZone('Africa/Cairo')))->format('Y-m-d');
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            "INSERT INTO player_notifications (
+                game_id, title, message, notification_type, priority_level, visibility_status, target_scope,
+                target_group_id, target_group_name, target_group_level, target_player_id,
+                display_date, created_by_user_id, updated_by_user_id
+             ) VALUES (?, ?, ?, ?, ?, 'visible', 'player', NULL, NULL, NULL, ?, ?, ?, ?)"
+        );
+        $stmt->execute([
+            $gameId,
+            $title,
+            $message,
+            $notificationType !== '' ? $notificationType : 'alert',
+            $priorityLevel !== '' ? $priorityLevel : 'important',
+            $playerId,
+            $displayDate,
+            $userId,
+            $userId,
+        ]);
+        return true;
+    } catch (Throwable $throwable) {
+        error_log('Failed to create direct player notification: ' . $throwable->getMessage());
+    }
+
+    return false;
 }
 
 function fetchPentathlonPlayerSubGameSessions(PDO $pdo, $playerId)
