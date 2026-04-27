@@ -815,7 +815,9 @@ function ensurePlayerSubscriptionStatusNotifications(PDO $pdo, array $player, ?D
     }
 
     $today = $today ?: new DateTimeImmutable('today', new DateTimeZone('Africa/Cairo'));
-    if (createPlayerDate($subscriptionStartDate) > $today) {
+    $subscriptionStart = createPlayerDate($subscriptionStartDate);
+    $subscriptionEnd = createPlayerDate($subscriptionEndDate);
+    if ($subscriptionStart > $today) {
         return;
     }
 
@@ -830,7 +832,7 @@ function ensurePlayerSubscriptionStatusNotifications(PDO $pdo, array $player, ?D
             $player,
             'subscription_expires_tomorrow',
             '⏳ اشتراكك ينتهي غدًا',
-            "تنبيه: يتبقى يوم واحد فقط على نهاية اشتراكك.\nيرجى مراجعة الإدارة لتجديد الاشتراك قبل تاريخ " . createPlayerDate($subscriptionEndDate)->format('Y/m/d') . ".",
+            "تنبيه: يتبقى يوم واحد فقط على نهاية اشتراكك.\nيرجى مراجعة الإدارة لتجديد الاشتراك قبل تاريخ " . $subscriptionEnd->format('Y/m/d') . ".",
             $displayDate,
             $userId
         );
