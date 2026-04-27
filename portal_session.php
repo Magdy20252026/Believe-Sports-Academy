@@ -1,7 +1,7 @@
 <?php
 
 const PORTAL_SESSION_LIFETIME_SECONDS = 2592000;
-const PORTAL_SESSION_EXPIRED_COOKIE_OFFSET_SECONDS = 42000;
+const PORTAL_SESSION_COOKIE_CLEAR_OFFSET_SECONDS = 42000;
 
 function portalSessionResolveName($portalKey)
 {
@@ -69,7 +69,7 @@ function destroyPortalSession($portalKey)
             session_name(),
             '',
             [
-                'expires' => time() - PORTAL_SESSION_EXPIRED_COOKIE_OFFSET_SECONDS,
+                'expires' => time() - PORTAL_SESSION_COOKIE_CLEAR_OFFSET_SECONDS,
                 'path' => $cookieParams['path'] ?? '/',
                 'domain' => $cookieParams['domain'] ?? '',
                 'secure' => !empty($cookieParams['secure']),
