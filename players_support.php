@@ -551,12 +551,11 @@ function ensurePlayerNotificationReadsTable(PDO $pdo)
     );
 }
 
-function fetchPlayerPortalNotifications(PDO $pdo, $gameId, $playerId, $groupId, $groupLevel, $limit = 50)
+function fetchPlayerPortalNotifications(PDO $pdo, $gameId, $playerId, $groupId, $groupLevel)
 {
     ensurePlayerNotificationsTableForPortal($pdo);
     ensurePlayerNotificationReadsTable($pdo);
 
-    $limit = max(1, (int)$limit);
     $stmt = $pdo->prepare(
         "SELECT n.id, n.title, n.message, n.notification_type, n.priority_level, n.target_scope,
                 n.display_date, n.created_at,
@@ -572,7 +571,7 @@ function fetchPlayerPortalNotifications(PDO $pdo, $gameId, $playerId, $groupId, 
                 OR (n.target_scope = 'player' AND n.target_player_id = ?)
            )
          ORDER BY n.display_date DESC, n.id DESC
-         LIMIT {$limit}"
+         LIMIT 50"
     );
     $stmt->execute([
         (int)$playerId,

@@ -261,8 +261,7 @@ try {
         $playerGameId,
         $playerId,
         (int)$player["group_id"],
-        $currentLevel,
-        50
+        $currentLevel
     );
     foreach ($notifications as $notificationRow) {
         if ((int)($notificationRow["is_read"] ?? 0) === 0) {
