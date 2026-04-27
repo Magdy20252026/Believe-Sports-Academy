@@ -4,6 +4,7 @@ startSecureSession();
 require_once "config.php";
 requireAuthenticatedUser();
 require_once "navigation.php";
+require_once "dashboard_notifications_support.php";
 require_once "players_support.php";
 
 function getDashboardEgyptDayKey(DateTimeInterface $dateTime)
@@ -227,6 +228,11 @@ function fetchDashboardConsecutiveAbsenceAlerts(PDO $pdo, $gameId)
         if ((string)$rows[0]["attendance_status"] === $absentStatus
             && (string)$rows[1]["attendance_status"] === $absentStatus) {
             $alerts[] = [
+                "alert_key" => buildDashboardNotificationKey("absence", [
+                    (int)($p["id"] ?? 0),
+                    (string)($rows[1]["attendance_date"] ?? ""),
+                    (string)($rows[0]["attendance_date"] ?? ""),
+                ]),
                 "type" => "absence",
                 "barcode" => (string)$p["barcode"],
                 "name" => (string)$p["name"],
@@ -236,6 +242,8 @@ function fetchDashboardConsecutiveAbsenceAlerts(PDO $pdo, $gameId)
                 "group_level" => (string)$p["group_level"],
                 "trainer_name" => (string)$p["trainer_name"],
                 "detail" => "غياب يومين متتاليين (" . $rows[1]["attendance_date"] . " و " . $rows[0]["attendance_date"] . ")",
+                "alert_date" => (string)($rows[0]["attendance_date"] ?? ""),
+                "alert_time" => "—",
             ];
         }
     }
@@ -283,6 +291,11 @@ function fetchDashboardExpiredSubscriptionAlerts(PDO $pdo, $gameId, DateTimeImmu
         }
 
         $alerts[] = [
+            "alert_key" => buildDashboardNotificationKey("expiry", [
+                (int)($p["id"] ?? 0),
+                (string)($p["subscription_end_date"] ?? ""),
+                $remainingTrainings,
+            ]),
             "type" => "expiry",
             "barcode" => (string)$p["barcode"],
             "name" => (string)$p["name"],
@@ -292,6 +305,8 @@ function fetchDashboardExpiredSubscriptionAlerts(PDO $pdo, $gameId, DateTimeImmu
             "group_level" => (string)$p["group_level"],
             "trainer_name" => (string)$p["trainer_name"],
             "detail" => "انتهى الاشتراك في " . (string)$p["subscription_end_date"],
+            "alert_date" => (string)($p["subscription_end_date"] ?? ""),
+            "alert_time" => "—",
         ];
     }
     return $alerts;
@@ -308,12 +323,14 @@ function fetchDashboardStaffAttendanceAlerts(PDO $pdo, $gameId, DateTimeImmutabl
 
     $trainerStmt = $pdo->prepare(
         "SELECT 'trainer' AS staff_type,
+                t.id AS staff_id,
                 t.barcode,
                 t.name,
                 t.phone,
                 ta.attendance_date,
                 ta.attendance_status,
                 ta.attendance_minutes_late,
+                ta.attendance_at,
                 ta.day_status
          FROM trainer_attendance ta
          INNER JOIN trainers t ON t.id = ta.trainer_id
@@ -331,6 +348,12 @@ function fetchDashboardStaffAttendanceAlerts(PDO $pdo, $gameId, DateTimeImmutabl
     foreach ($trainerStmt->fetchAll() as $row) {
         $isAbsent = (string)($row["day_status"] ?? "") === "غياب" || (string)($row["attendance_status"] ?? "") === "غياب";
         $alerts[] = [
+            "alert_key" => buildDashboardNotificationKey("trainer_attendance", [
+                (int)($row["staff_id"] ?? 0),
+                (string)($row["attendance_date"] ?? ""),
+                $isAbsent ? "absent" : "late",
+                (int)($row["attendance_minutes_late"] ?? 0),
+            ]),
             "staff_label" => "مدرب",
             "barcode" => (string)($row["barcode"] ?? ""),
             "name" => (string)($row["name"] ?? ""),
@@ -340,17 +363,21 @@ function fetchDashboardStaffAttendanceAlerts(PDO $pdo, $gameId, DateTimeImmutabl
                 : "دقائق التأخير: " . (int)($row["attendance_minutes_late"] ?? 0),
             "status_badge" => $isAbsent ? "غياب" : "تأخير",
             "status_class" => $isAbsent ? "danger" : "warning",
+            "alert_date" => (string)($row["attendance_date"] ?? $attendanceDate),
+            "alert_time" => $isAbsent ? "—" : formatDashboardAttendanceTime($row["attendance_at"] ?? ""),
         ];
     }
 
     $adminStmt = $pdo->prepare(
         "SELECT 'admin' AS staff_type,
+                a.id AS staff_id,
                 a.barcode,
                 a.name,
                 a.phone,
                 aa.attendance_date,
                 aa.attendance_status,
                 aa.attendance_minutes_late,
+                aa.attendance_at,
                 aa.day_status
          FROM admin_attendance aa
          INNER JOIN admins a ON a.id = aa.admin_id
@@ -368,6 +395,12 @@ function fetchDashboardStaffAttendanceAlerts(PDO $pdo, $gameId, DateTimeImmutabl
     foreach ($adminStmt->fetchAll() as $row) {
         $isAbsent = (string)($row["day_status"] ?? "") === "غياب" || (string)($row["attendance_status"] ?? "") === "غياب";
         $alerts[] = [
+            "alert_key" => buildDashboardNotificationKey("admin_attendance", [
+                (int)($row["staff_id"] ?? 0),
+                (string)($row["attendance_date"] ?? ""),
+                $isAbsent ? "absent" : "late",
+                (int)($row["attendance_minutes_late"] ?? 0),
+            ]),
             "staff_label" => "إداري",
             "barcode" => (string)($row["barcode"] ?? ""),
             "name" => (string)($row["name"] ?? ""),
@@ -377,16 +410,44 @@ function fetchDashboardStaffAttendanceAlerts(PDO $pdo, $gameId, DateTimeImmutabl
                 : "دقائق التأخير: " . (int)($row["attendance_minutes_late"] ?? 0),
             "status_badge" => $isAbsent ? "غياب" : "تأخير",
             "status_class" => $isAbsent ? "danger" : "warning",
+            "alert_date" => (string)($row["attendance_date"] ?? $attendanceDate),
+            "alert_time" => $isAbsent ? "—" : formatDashboardAttendanceTime($row["attendance_at"] ?? ""),
         ];
     }
 
     return $alerts;
 }
 
+$currentUserId = (int)($_SESSION["user_id"] ?? 0);
 $absenceAlerts = fetchDashboardConsecutiveAbsenceAlerts($pdo, $currentGameId);
 $expiredSubscriptionAlerts = fetchDashboardExpiredSubscriptionAlerts($pdo, $currentGameId, $egyptNow);
 $staffAttendanceAlerts = fetchDashboardStaffAttendanceAlerts($pdo, $currentGameId, $egyptNow);
-$totalNotifications = count($absenceAlerts) + count($expiredSubscriptionAlerts) + count($staffAttendanceAlerts);
+$allDashboardAlertKeys = [];
+foreach ([$absenceAlerts, $expiredSubscriptionAlerts, $staffAttendanceAlerts] as $alertGroup) {
+    foreach ($alertGroup as $alertRow) {
+        $alertKey = trim((string)($alertRow["alert_key"] ?? ""));
+        if ($alertKey !== "") {
+            $allDashboardAlertKeys[] = $alertKey;
+        }
+    }
+}
+$readDashboardAlertLookup = array_fill_keys(
+    fetchDashboardReadAlertKeys($pdo, $currentUserId, $currentGameId, $allDashboardAlertKeys),
+    true
+);
+$unreadAlertKeys = [];
+foreach (["absenceAlerts", "expiredSubscriptionAlerts", "staffAttendanceAlerts"] as $alertGroupName) {
+    foreach (${$alertGroupName} as $index => $alertRow) {
+        $alertKey = trim((string)($alertRow["alert_key"] ?? ""));
+        $isRead = $alertKey !== "" && isset($readDashboardAlertLookup[$alertKey]);
+        ${$alertGroupName}[$index]["is_read"] = $isRead ? 1 : 0;
+        if (!$isRead && $alertKey !== "") {
+            $unreadAlertKeys[] = $alertKey;
+        }
+    }
+}
+$visibleNotificationsCount = count($absenceAlerts) + count($expiredSubscriptionAlerts) + count($staffAttendanceAlerts);
+$unreadNotificationsCount = count($unreadAlertKeys);
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -428,15 +489,18 @@ $totalNotifications = count($absenceAlerts) + count($expiredSubscriptionAlerts) 
                 <div class="notif-wrap" id="notifWrap" style="position:relative;">
                     <button type="button" id="notifBellBtn" class="notif-bell" aria-label="الإشعارات" style="position:relative; background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:8px 12px; cursor:pointer; font-size:18px; box-shadow:0 1px 3px rgba(0,0,0,0.06);">
                         🔔
-                        <?php if ($totalNotifications > 0): ?>
-                            <span class="notif-badge" style="position:absolute; top:-6px; left:-6px; background:#dc2626; color:#fff; border-radius:999px; min-width:22px; height:22px; line-height:22px; padding:0 6px; font-size:12px; font-weight:800;"><?php echo (int)$totalNotifications; ?></span>
+                        <?php if ($unreadNotificationsCount > 0): ?>
+                            <span class="notif-badge" style="position:absolute; top:-6px; left:-6px; background:#dc2626; color:#fff; border-radius:999px; min-width:22px; height:22px; line-height:22px; padding:0 6px; font-size:12px; font-weight:800;"><?php echo (int)$unreadNotificationsCount; ?></span>
                         <?php endif; ?>
                     </button>
                     <div id="notifDropdown" class="notif-dropdown" style="display:none; position:absolute; top:calc(100% + 8px); left:0; min-width:380px; max-width:440px; max-height:520px; overflow-y:auto; background:#fff; border:1px solid #e5e7eb; border-radius:14px; box-shadow:0 10px 30px rgba(0,0,0,0.15); z-index:9999; direction:rtl; text-align:right;">
                         <div style="padding:12px 14px; border-bottom:1px solid #f1f5f9; font-weight:800; color:#0f172a; background:#f8fafc; border-radius:14px 14px 0 0;">
-                            🔔 الإشعارات (<?php echo (int)$totalNotifications; ?>)
+                            <div>🔔 الإشعارات</div>
+                            <div id="notifUnreadSummary" style="margin-top:4px; font-size:12px; font-weight:700; color:#475569;">
+                                غير المقروء: <span id="notifUnreadCountValue"><?php echo (int)$unreadNotificationsCount; ?></span> | الكل: <?php echo (int)$visibleNotificationsCount; ?>
+                            </div>
                         </div>
-                        <?php if ($totalNotifications === 0): ?>
+                        <?php if ($visibleNotificationsCount === 0): ?>
                             <div style="padding:18px; text-align:center; color:#64748b;">لا توجد إشعارات حالياً</div>
                         <?php else: ?>
                             <?php if (count($absenceAlerts) > 0): ?>
@@ -449,6 +513,7 @@ $totalNotifications = count($absenceAlerts) + count($expiredSubscriptionAlerts) 
                                         <div style="font-size:13px; color:#475569; margin-bottom:2px;">📊 الباركود: <strong><?php echo htmlspecialchars($a["barcode"] !== "" ? $a["barcode"] : "—", ENT_QUOTES, 'UTF-8'); ?></strong></div>
                                         <div style="font-size:13px; color:#475569;">📞 <?php echo htmlspecialchars($a["phone"] !== "" ? $a["phone"] : "—", ENT_QUOTES, 'UTF-8'); ?><?php if ($a["phone2"] !== ""): ?> | 📱 <?php echo htmlspecialchars($a["phone2"], ENT_QUOTES, 'UTF-8'); ?><?php endif; ?></div>
                                         <div style="font-size:12px; color:#b91c1c; margin-top:4px;"><?php echo htmlspecialchars($a["detail"], ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <div style="font-size:12px; color:#64748b; margin-top:4px;">🗓️ التاريخ: <?php echo htmlspecialchars($a["alert_date"] !== "" ? $a["alert_date"] : "—", ENT_QUOTES, 'UTF-8'); ?> | ⏰ الوقت: <?php echo htmlspecialchars($a["alert_time"] !== "" ? $a["alert_time"] : "—", ENT_QUOTES, 'UTF-8'); ?></div>
                                     </div>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -462,6 +527,7 @@ $totalNotifications = count($absenceAlerts) + count($expiredSubscriptionAlerts) 
                                         <div style="font-size:13px; color:#475569; margin-bottom:2px;">📊 الباركود: <strong><?php echo htmlspecialchars($a["barcode"] !== "" ? $a["barcode"] : "—", ENT_QUOTES, 'UTF-8'); ?></strong></div>
                                         <div style="font-size:13px; color:#475569;">📞 <?php echo htmlspecialchars($a["phone"] !== "" ? $a["phone"] : "—", ENT_QUOTES, 'UTF-8'); ?><?php if ($a["phone2"] !== ""): ?> | 📱 <?php echo htmlspecialchars($a["phone2"], ENT_QUOTES, 'UTF-8'); ?><?php endif; ?></div>
                                         <div style="font-size:12px; color:#92400e; margin-top:4px;"><?php echo htmlspecialchars($a["detail"], ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <div style="font-size:12px; color:#64748b; margin-top:4px;">🗓️ التاريخ: <?php echo htmlspecialchars($a["alert_date"] !== "" ? $a["alert_date"] : "—", ENT_QUOTES, 'UTF-8'); ?> | ⏰ الوقت: <?php echo htmlspecialchars($a["alert_time"] !== "" ? $a["alert_time"] : "—", ENT_QUOTES, 'UTF-8'); ?></div>
                                     </div>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -484,6 +550,7 @@ $totalNotifications = count($absenceAlerts) + count($expiredSubscriptionAlerts) 
                                         <div style="font-size:13px; color:#475569; margin-bottom:2px;">📊 الباركود: <strong><?php echo htmlspecialchars($a["barcode"] !== "" ? $a["barcode"] : "—", ENT_QUOTES, 'UTF-8'); ?></strong></div>
                                         <div style="font-size:13px; color:#475569;">📞 <?php echo htmlspecialchars($a["phone"] !== "" ? $a["phone"] : "—", ENT_QUOTES, 'UTF-8'); ?></div>
                                         <div style="font-size:12px; color:#1d4ed8; margin-top:4px;"><?php echo htmlspecialchars($a["detail"], ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <div style="font-size:12px; color:#64748b; margin-top:4px;">🗓️ التاريخ: <?php echo htmlspecialchars($a["alert_date"] !== "" ? $a["alert_date"] : "—", ENT_QUOTES, 'UTF-8'); ?> | ⏰ الوقت: <?php echo htmlspecialchars($a["alert_time"] !== "" ? $a["alert_time"] : "—", ENT_QUOTES, 'UTF-8'); ?></div>
                                     </div>
                                 <?php endforeach; ?>
                             <?php endif; ?>
@@ -532,10 +599,84 @@ $totalNotifications = count($absenceAlerts) + count($expiredSubscriptionAlerts) 
     var btn = document.getElementById('notifBellBtn');
     var dd = document.getElementById('notifDropdown');
     var wrap = document.getElementById('notifWrap');
+    var unreadCountValue = document.getElementById('notifUnreadCountValue');
+    var unreadAlertKeys = <?php echo json_encode(array_values($unreadAlertKeys), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+    var isMarkingRead = false;
     if (!btn || !dd || !wrap) return;
+
+    function setUnreadCount(count) {
+        count = Math.max(0, parseInt(count, 10) || 0);
+        var badge = btn.querySelector('.notif-badge');
+        if (unreadCountValue) {
+            unreadCountValue.textContent = String(count);
+        }
+        if (count === 0) {
+            if (badge) {
+                badge.remove();
+            }
+            return;
+        }
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'notif-badge';
+            badge.style.position = 'absolute';
+            badge.style.top = '-6px';
+            badge.style.left = '-6px';
+            badge.style.background = '#dc2626';
+            badge.style.color = '#fff';
+            badge.style.borderRadius = '999px';
+            badge.style.minWidth = '22px';
+            badge.style.height = '22px';
+            badge.style.lineHeight = '22px';
+            badge.style.padding = '0 6px';
+            badge.style.fontSize = '12px';
+            badge.style.fontWeight = '800';
+            btn.appendChild(badge);
+        }
+        badge.textContent = String(count);
+    }
+
+    function markNotificationsAsRead() {
+        if (isMarkingRead || !Array.isArray(unreadAlertKeys) || unreadAlertKeys.length === 0) {
+            return;
+        }
+        isMarkingRead = true;
+        fetch('dashboard_notifications_read.php', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+                notification_keys: unreadAlertKeys
+            })
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return response.json();
+            })
+            .then(function (payload) {
+                if (!payload || payload.ok !== true) {
+                    throw new Error('invalid_payload');
+                }
+                unreadAlertKeys = [];
+                setUnreadCount(0);
+            })
+            .catch(function () {
+                isMarkingRead = false;
+            });
+    }
+
     btn.addEventListener('click', function (e) {
         e.stopPropagation();
-        dd.style.display = dd.style.display === 'none' ? 'block' : 'none';
+        var shouldOpen = dd.style.display === 'none';
+        dd.style.display = shouldOpen ? 'block' : 'none';
+        if (shouldOpen) {
+            markNotificationsAsRead();
+        }
     });
     document.addEventListener('click', function (e) {
         if (!wrap.contains(e.target)) { dd.style.display = 'none'; }
