@@ -4,7 +4,7 @@
 
 يوجد مشروع أندرويد جديد داخل:
 
-`/home/runner/work/Believe-Sports-Academy/Believe-Sports-Academy/android-webview`
+`android-webview`
 
 المشروع يحتوي على 3 نكهات Build Flavors جاهزة:
 
@@ -49,7 +49,7 @@
 من داخل مجلد المشروع:
 
 ```bash
-cd /home/runner/work/Believe-Sports-Academy/Believe-Sports-Academy/android-webview
+cd android-webview
 ./gradlew assemblePlayersDebug
 ./gradlew assembleAdminsDebug
 ./gradlew assembleTrainersDebug
