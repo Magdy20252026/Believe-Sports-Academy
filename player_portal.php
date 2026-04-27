@@ -1053,9 +1053,7 @@ window.__PORTAL_SESSION_GUARD__ = {
         });
     }
 
-    if (typeof mobileMq.addEventListener === 'function') {
-        mobileMq.addEventListener('change', syncSidebarMode);
-    }
+    mobileMq.addEventListener('change', syncSidebarMode);
 
     var barcodeEl = document.getElementById('ppBarcode');
     if (barcodeEl && window.JsBarcode) {
