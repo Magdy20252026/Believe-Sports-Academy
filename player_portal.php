@@ -1013,6 +1013,7 @@ window.__PORTAL_SESSION_GUARD__ = {
     var liveNoticeMessage = document.getElementById('ppLiveNoticeMessage');
     var liveNoticeClose = document.getElementById('ppLiveNoticeClose');
     var liveNoticeTimer = null;
+    var LIVE_NOTICE_DURATION_MS = 8000;
 
     function hideLiveNotice() {
         if (!liveNotice) return;
@@ -1027,7 +1028,7 @@ window.__PORTAL_SESSION_GUARD__ = {
         liveNoticeTitle.textContent = notification.title || '📣 إشعار جديد';
         liveNoticeMessage.textContent = notification.message || '';
         liveNotice.classList.add('show');
-        liveNoticeTimer = setTimeout(hideLiveNotice, 8000);
+        liveNoticeTimer = setTimeout(hideLiveNotice, LIVE_NOTICE_DURATION_MS);
     }
 
     if (liveNoticeClose) {
@@ -1039,6 +1040,7 @@ window.__PORTAL_SESSION_GUARD__ = {
         var lastSeenId = parseInt(sessionStorage.getItem(storageKey) || '0', 10);
         if (!lastSeenId) {
             sessionStorage.setItem(storageKey, String(latestNotification.id));
+            showLiveNotice(latestNotification);
         } else if (latestNotification.id > lastSeenId) {
             sessionStorage.setItem(storageKey, String(latestNotification.id));
             showLiveNotice(latestNotification);

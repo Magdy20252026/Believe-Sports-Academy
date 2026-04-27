@@ -20,6 +20,8 @@ const PLAYER_DAY_ORDER_SQL = "'saturday', 'sunday', 'monday', 'tuesday', 'wednes
 const PLAYER_DAY_SEPARATOR = '|';
 const PLAYER_BARCODE_MAX_LENGTH = 100;
 const PLAYER_LEVEL_MAX_LENGTH = 150;
+const PLAYER_NOTIFICATION_TITLE_MAX_LENGTH = 160;
+const PLAYER_NOTIFICATION_MESSAGE_MAX_LENGTH = 3000;
 const PLAYER_ATTENDANCE_EMPTY_VALUE = '—';
 const PLAYER_ATTENDANCE_STATUS_PRESENT = 'حضور';
 const PLAYER_ATTENDANCE_STATUS_ABSENT = 'غياب';
@@ -489,8 +491,7 @@ function ensurePlayerNotificationsTableForPortal(PDO $pdo)
             KEY idx_player_notifications_game_date (game_id, display_date),
             KEY idx_player_notifications_status (game_id, visibility_status),
             KEY idx_player_notifications_scope (game_id, target_scope),
-            KEY idx_player_notifications_group (game_id, target_group_id),
-            KEY idx_player_notifications_player (game_id, target_player_id)
+            KEY idx_player_notifications_group (game_id, target_group_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
     );
 
@@ -531,7 +532,7 @@ function ensurePlayerNotificationsTableForPortal(PDO $pdo)
     }
 }
 
-function createDirectPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $message, $notificationType = 'alert', $priorityLevel = 'important', $displayDate = null, $userId = null)
+function createPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $message, $notificationType = 'alert', $priorityLevel = 'important', $displayDate = null, $userId = null)
 {
     ensurePlayerNotificationsTableForPortal($pdo);
 
@@ -548,11 +549,11 @@ function createDirectPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $m
     }
 
     if (function_exists('mb_substr')) {
-        $title = mb_substr($title, 0, 160, 'UTF-8');
-        $message = mb_substr($message, 0, 3000, 'UTF-8');
+        $title = mb_substr($title, 0, PLAYER_NOTIFICATION_TITLE_MAX_LENGTH, 'UTF-8');
+        $message = mb_substr($message, 0, PLAYER_NOTIFICATION_MESSAGE_MAX_LENGTH, 'UTF-8');
     } else {
-        $title = substr($title, 0, 160);
-        $message = substr($message, 0, 3000);
+        $title = substr($title, 0, PLAYER_NOTIFICATION_TITLE_MAX_LENGTH);
+        $message = substr($message, 0, PLAYER_NOTIFICATION_MESSAGE_MAX_LENGTH);
     }
 
     $displayDate = trim((string)$displayDate);
@@ -585,6 +586,20 @@ function createDirectPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $m
     }
 
     return false;
+}
+
+function buildPlayerAbsenceNotificationMessage($attendanceDateLabel, $reasonLine = '')
+{
+    $messageLines = [
+        "تم تسجيل غيابك بتاريخ " . trim((string)$attendanceDateLabel) . ".",
+    ];
+
+    $reasonLine = trim((string)$reasonLine);
+    if ($reasonLine !== '') {
+        $messageLines[] = $reasonLine;
+    }
+
+    return implode("\n", $messageLines);
 }
 
 function fetchPentathlonPlayerSubGameSessions(PDO $pdo, $playerId)

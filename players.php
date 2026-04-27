@@ -611,7 +611,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                             if ($previousGroupLevel !== $newGroupLevel) {
                                 $levelMessage[] = "مستوى المجموعة الحالي: " . ($newGroupLevel !== '' ? $newGroupLevel : 'غير محدد');
                             }
-                            createDirectPlayerNotification(
+                            createPlayerNotification(
                                 $pdo,
                                 $currentGameId,
                                 $formData['id'],
