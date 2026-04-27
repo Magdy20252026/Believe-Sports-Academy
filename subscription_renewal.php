@@ -274,7 +274,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'يجب استكمال أيام التمرين في بيانات المجموعة أولًا.';
             } elseif ($selectedGroupTrainingTime === '') {
                 $error = 'يجب تحديد ميعاد التمرين في بيانات المجموعة أولًا.';
-            } elseif (countPlayersInGroup($pdo, $currentGameId, $selectedGroupId, $formData['player_id']) >= (int)($selectedGroup['max_players'] ?? 0)) {
+            } elseif (playerGroupReachedCapacity($pdo, $currentGameId, $selectedGroupId, $selectedGroup['max_players'] ?? 0, $formData['player_id'])) {
                 $error = 'لا يمكن نقل أو تجديد اللاعب في هذه المجموعة لأن العدد وصل إلى الحد الأقصى.';
             } else {
                 $formData['training_day_keys'] = $selectedGroupTrainingDayKeys;

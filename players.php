@@ -510,7 +510,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                 $error = 'يجب تحديد يوم تمرين واحد على الأقل للاعب.';
             } elseif ($formData['training_time'] === '') {
                 $error = 'ميعاد تمرين اللاعب غير صحيح.';
-            } elseif (countPlayersInGroup($pdo, $currentGameId, $selectedGroupId, $formData['id']) >= (int)($selectedGroup['max_players'] ?? 0)) {
+            } elseif (playerGroupReachedCapacity($pdo, $currentGameId, $selectedGroupId, $selectedGroup['max_players'] ?? 0, $formData['id'])) {
                 $error = 'لا يمكن تسجيل لاعب جديد في هذه المجموعة لأن العدد وصل إلى الحد الأقصى.';
             }
 
@@ -968,7 +968,7 @@ foreach ($groups as $group) {
         'exercises_count' => (int)$group['exercises_count'],
         'max_players' => (int)($group['max_players'] ?? 0),
         'current_players_count' => (int)($group['current_players_count'] ?? 0),
-        'has_available_slot' => (int)($group['current_players_count'] ?? 0) < (int)($group['max_players'] ?? 0),
+        'has_available_slot' => playerGroupHasAvailableSlot($group),
         'trainer_name' => (string)$group['trainer_name'],
         'academy_percentage' => formatPlayerCurrency($group['academy_percentage'] ?? 0),
         'walkers_price' => formatPlayerCurrency($group['walkers_price'] ?? 0),
@@ -1730,6 +1730,28 @@ document.addEventListener('DOMContentLoaded', function () {
             trainingDaysHelper.textContent = 'تم تحديد ' + selectedDays.length + ' يوم تمرين للاعب.';
         }
     };
+    const parseDateInputValue = function (value) {
+        if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            return null;
+        }
+
+        const parts = value.split('-').map(Number);
+        const year = parts[0];
+        const monthIndex = parts[1] - 1;
+        const day = parts[2];
+        const parsedDate = new Date(year, monthIndex, day);
+        if (
+            Number.isNaN(parsedDate.getTime())
+            || parsedDate.getFullYear() !== year
+            || parsedDate.getMonth() !== monthIndex
+            || parsedDate.getDate() !== day
+        ) {
+            return null;
+        }
+
+        parsedDate.setHours(0, 0, 0, 0);
+        return parsedDate;
+    };
     const updatePlayerAge = function () {
         if (!playerAgeDisplay) return;
         const rawBirthDate = birthDateInput ? birthDateInput.value : '';
@@ -1738,10 +1760,10 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const birthDate = new Date(rawBirthDate + 'T00:00:00');
+        const birthDate = parseDateInputValue(rawBirthDate);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        if (Number.isNaN(birthDate.getTime()) || birthDate > today) {
+        if (!birthDate || birthDate > today) {
             playerAgeDisplay.value = '';
             return;
         }
@@ -1838,7 +1860,10 @@ document.addEventListener('DOMContentLoaded', function () {
     if (groupSelect) groupSelect.addEventListener('change', function () { updateDerivedFields(true); });
     if (categorySelect) categorySelect.addEventListener('change', function () { updateDerivedFields(false); });
     if (paidAmountInput) paidAmountInput.addEventListener('input', function () { updateDerivedFields(false); });
-    if (birthDateInput) birthDateInput.addEventListener('input', updatePlayerAge);
+    if (birthDateInput) {
+        birthDateInput.addEventListener('input', updatePlayerAge);
+        birthDateInput.addEventListener('change', updatePlayerAge);
+    }
     const shouldResetScheduleFromSelectedGroup = !!(groupSelect && groupSelect.value !== '');
     rebuildGroupOptions();
     updateDerivedFields(shouldResetScheduleFromSelectedGroup);
