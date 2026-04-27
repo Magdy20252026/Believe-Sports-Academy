@@ -121,10 +121,14 @@ class MainActivity : AppCompatActivity() {
         PortalBackgroundNotifications.showPortalNotification(this, title, message)
     }
 
+    private fun showOfflineCacheLoadedToast() {
+        Toast.makeText(this, R.string.offline_cached_page_loaded, Toast.LENGTH_SHORT).show()
+    }
+
     private fun loadInitialPortalUrl() {
         val targetUrl = PortalOfflineCache.lastSyncedUrl(this) ?: BuildConfig.PORTAL_URL
         if (!PortalOfflineCache.isOnline(this) && PortalOfflineCache.loadCachedPage(binding.portalWebView, targetUrl)) {
-            Toast.makeText(this, R.string.offline_cached_page_loaded, Toast.LENGTH_SHORT).show()
+            showOfflineCacheLoadedToast()
             return
         }
         binding.portalWebView.loadUrl(targetUrl)
@@ -148,7 +152,7 @@ class MainActivity : AppCompatActivity() {
             if (scheme == "http" || scheme == "https") {
                 if (request?.isForMainFrame == true && !PortalOfflineCache.isOnline(this@MainActivity)) {
                     return if (PortalOfflineCache.loadCachedPage(binding.portalWebView, uri.toString())) {
-                        Toast.makeText(this@MainActivity, R.string.offline_cached_page_loaded, Toast.LENGTH_SHORT).show()
+                        showOfflineCacheLoadedToast()
                         true
                     } else {
                         Toast.makeText(this@MainActivity, R.string.offline_cached_page_missing, Toast.LENGTH_SHORT).show()
@@ -184,7 +188,7 @@ class MainActivity : AppCompatActivity() {
                 binding.loadingIndicator.hide()
                 val failingUrl = request.url?.toString()
                 if (PortalOfflineCache.loadCachedPage(binding.portalWebView, failingUrl)) {
-                    Toast.makeText(this@MainActivity, R.string.offline_cached_page_loaded, Toast.LENGTH_SHORT).show()
+                    showOfflineCacheLoadedToast()
                     return
                 }
                 val messageId = if (!PortalOfflineCache.isOnline(this@MainActivity) && !PortalOfflineCache.hasCachedPage(this@MainActivity, failingUrl)) {
