@@ -24,12 +24,7 @@ $playerGameId = (int)$_SESSION["player_portal_game_id"];
 $siteName = (string)($_SESSION["player_portal_site_name"] ?? "أكاديمية رياضية");
 $siteLogo = (string)($_SESSION["player_portal_site_logo"] ?? "assets/images/logo.png");
 
-try {
-    $tpiCheck = $pdo->query("SHOW COLUMNS FROM player_notifications LIKE 'target_player_id'");
-    if (!$tpiCheck->fetch()) {
-        $pdo->exec("ALTER TABLE player_notifications ADD COLUMN target_player_id INT(11) NULL DEFAULT NULL AFTER target_group_level");
-    }
-} catch (PDOException $ignored) {}
+ensurePlayerNotificationsTableForPortal($pdo);
 
 try {
     $pdo->exec(
@@ -274,6 +269,7 @@ try {
     $stmt->execute([$playerGameId, $currentLevel, (int)$player["group_id"], $playerId]);
     $notifications = $stmt->fetchAll();
 } catch (PDOException $ignored) {}
+$latestNotification = $notifications[0] ?? null;
 
 function pportFmtDate($d) {
     $d = trim((string)$d);
@@ -364,6 +360,17 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 .pp-brand-badge { display:inline-block; font-size:.68rem; font-weight:800; color:#fff;
     background:linear-gradient(135deg,#16a34a,#2f5bea); border-radius:999px; padding:2px 9px; margin-top:2px; }
 .pp-topbar-r { display:flex; align-items:center; gap:10px; }
+.pp-alert-link {
+    position:relative; display:inline-flex; align-items:center; justify-content:center;
+    width:42px; height:42px; border-radius:12px; text-decoration:none; color:var(--text);
+    border:1px solid var(--border); background:var(--bg); font-size:1.05rem;
+}
+.pp-alert-link:hover { color:var(--primary); border-color:var(--primary); }
+.pp-alert-count {
+    position:absolute; top:-6px; left:-6px; min-width:20px; height:20px; padding:0 6px;
+    border-radius:999px; background:var(--danger); color:#fff; font-size:.72rem; font-weight:800;
+    display:inline-flex; align-items:center; justify-content:center; box-shadow:0 6px 14px rgba(220,38,38,.24);
+}
 .pp-user { font-size:.88rem; font-weight:700; color:var(--text-soft); display:flex; align-items:center; gap:5px; }
 .pp-logout {
     padding:7px 14px; background:rgba(220,38,38,.1); color:var(--danger);
@@ -561,6 +568,27 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 .pp-notif-meta { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .pp-notif-msg { font-size:.88rem; font-weight:600; color:var(--text); line-height:1.6; white-space:pre-line; }
 .pp-notif-date { font-size:.74rem; font-weight:700; color:var(--text-soft); margin-top:6px; }
+.pp-live-notice {
+    position:fixed; top:84px; left:20px; z-index:400; width:min(360px, calc(100vw - 24px));
+    background:linear-gradient(135deg,#0f172a,#1d4ed8); color:#fff; border-radius:18px;
+    padding:16px 18px; box-shadow:0 18px 40px rgba(15,23,42,.28);
+    opacity:0; transform:translateY(-12px); pointer-events:none; transition:all .25s ease;
+}
+.pp-live-notice.show { opacity:1; transform:translateY(0); pointer-events:auto; }
+.pp-live-notice-h {
+    display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin-bottom:8px;
+}
+.pp-live-notice-title { font-size:1rem; font-weight:800; }
+.pp-live-notice-close {
+    background:rgba(255,255,255,.12); color:#fff; border:none; border-radius:10px;
+    width:30px; height:30px; cursor:pointer; font-size:1rem; flex-shrink:0;
+}
+.pp-live-notice-msg { font-size:.9rem; line-height:1.8; white-space:pre-line; opacity:.95; }
+.pp-live-notice-actions { display:flex; justify-content:flex-end; margin-top:12px; }
+.pp-live-notice-btn {
+    display:inline-flex; align-items:center; gap:6px; border:none; border-radius:10px;
+    background:#fff; color:#0f172a; padding:9px 14px; text-decoration:none; font-size:.82rem; font-weight:800;
+}
 
 @media (max-width: 900px) {
     .pp-sidebar {
@@ -575,6 +603,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
     .pp-welcome { padding:20px; }
     .pp-welcome-title { font-size:1.15rem; }
     .pp-welcome-logo { width:60px; height:60px; }
+    .pp-live-notice { top:76px; left:12px; width:calc(100vw - 24px); }
 }
 @media (max-width: 600px) {
     .pp-topbar { padding:0 12px; }
@@ -598,6 +627,12 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
             </div>
         </div>
         <div class="pp-topbar-r">
+            <a href="?section=home" class="pp-alert-link" aria-label="الإشعارات">
+                🔔
+                <?php if (count($notifications) > 0): ?>
+                    <span class="pp-alert-count"><?php echo count($notifications); ?></span>
+                <?php endif; ?>
+            </a>
             <div class="pp-user"><span>👤</span><span><?php echo pportEsc($player["name"]); ?></span></div>
             <label class="theme-switch" for="themeToggle">
                 <input type="checkbox" id="themeToggle">
@@ -861,6 +896,17 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
     </div>
 </div>
 
+<div class="pp-live-notice" id="ppLiveNotice" aria-live="polite" aria-atomic="true">
+    <div class="pp-live-notice-h">
+        <div class="pp-live-notice-title" id="ppLiveNoticeTitle">📣 إشعار جديد</div>
+        <button type="button" class="pp-live-notice-close" id="ppLiveNoticeClose" aria-label="إغلاق">✕</button>
+    </div>
+    <div class="pp-live-notice-msg" id="ppLiveNoticeMessage"></div>
+    <div class="pp-live-notice-actions">
+        <a href="?section=home" class="pp-live-notice-btn">عرض الإشعارات</a>
+    </div>
+</div>
+
 <div class="pp-modal-back" id="ppOrderModal">
     <div class="pp-modal">
         <div class="pp-modal-h">
@@ -954,6 +1000,50 @@ window.__PORTAL_SESSION_GUARD__ = {
             }
         } else {
             barcodeEl.outerHTML = '<div style="padding:14px;color:#64748b;font-weight:800;">لا يوجد باركود مسجل لهذا اللاعب</div>';
+        }
+    }
+
+    var latestNotification = <?php echo json_encode($latestNotification ? [
+        'id' => (int)$latestNotification['id'],
+        'title' => (string)$latestNotification['title'],
+        'message' => (string)$latestNotification['message'],
+    ] : null, JSON_UNESCAPED_UNICODE); ?>;
+    var liveNotice = document.getElementById('ppLiveNotice');
+    var liveNoticeTitle = document.getElementById('ppLiveNoticeTitle');
+    var liveNoticeMessage = document.getElementById('ppLiveNoticeMessage');
+    var liveNoticeClose = document.getElementById('ppLiveNoticeClose');
+    var liveNoticeTimer = null;
+    var LIVE_NOTICE_DURATION_MS = 8000;
+
+    function hideLiveNotice() {
+        if (!liveNotice) return;
+        liveNotice.classList.remove('show');
+    }
+
+    function showLiveNotice(notification) {
+        if (!liveNotice || !notification || !notification.id) return;
+        if (liveNoticeTimer) {
+            clearTimeout(liveNoticeTimer);
+        }
+        liveNoticeTitle.textContent = notification.title || '📣 إشعار جديد';
+        liveNoticeMessage.textContent = notification.message || '';
+        liveNotice.classList.add('show');
+        liveNoticeTimer = setTimeout(hideLiveNotice, LIVE_NOTICE_DURATION_MS);
+    }
+
+    if (liveNoticeClose) {
+        liveNoticeClose.addEventListener('click', hideLiveNotice);
+    }
+
+    if (latestNotification && latestNotification.id) {
+        var storageKey = 'player-portal-last-notification-<?php echo (int)$playerId; ?>';
+        var lastSeenId = parseInt(sessionStorage.getItem(storageKey) || '0', 10);
+        if (!lastSeenId) {
+            sessionStorage.setItem(storageKey, String(latestNotification.id));
+            showLiveNotice(latestNotification);
+        } else if (latestNotification.id > lastSeenId) {
+            sessionStorage.setItem(storageKey, String(latestNotification.id));
+            showLiveNotice(latestNotification);
         }
     }
 })();
