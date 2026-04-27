@@ -253,23 +253,43 @@ try {
 } catch (PDOException $ignored) {}
 
 $notifications = [];
+$unreadNotificationCount = 0;
 try {
-    $stmt = $pdo->prepare(
-        "SELECT id, title, message, notification_type, priority_level, target_scope, display_date, created_at
-         FROM player_notifications
-         WHERE game_id = ? AND visibility_status = 'visible'
-           AND (
-                target_scope = 'all'
-                OR (target_scope = 'level' AND target_group_level = ?)
-                OR (target_scope = 'group' AND target_group_id = ?)
-                OR (target_scope = 'player' AND target_player_id = ?)
-           )
-         ORDER BY display_date DESC, id DESC LIMIT 50"
+    $notifications = fetchPlayerPortalNotifications(
+        $pdo,
+        $playerGameId,
+        $playerId,
+        (int)$player["group_id"],
+        $currentLevel,
+        50
     );
-    $stmt->execute([$playerGameId, $currentLevel, (int)$player["group_id"], $playerId]);
-    $notifications = $stmt->fetchAll();
-} catch (PDOException $ignored) {}
-$latestNotification = $notifications[0] ?? null;
+    foreach ($notifications as $notificationRow) {
+        if ((int)($notificationRow["is_read"] ?? 0) === 0) {
+            $unreadNotificationCount++;
+        }
+    }
+
+    if ($activeSection === "home" && $unreadNotificationCount > 0) {
+        $unreadNotificationIds = [];
+        foreach ($notifications as $notificationRow) {
+            if ((int)($notificationRow["is_read"] ?? 0) === 0) {
+                $unreadNotificationIds[] = (int)$notificationRow["id"];
+            }
+        }
+        markPlayerPortalNotificationsAsRead($pdo, $playerId, $unreadNotificationIds);
+        $unreadNotificationCount = 0;
+    }
+} catch (Throwable $ignored) {}
+$latestNotification = null;
+foreach ($notifications as $notificationRow) {
+    if ((int)($notificationRow["is_read"] ?? 0) === 0) {
+        $latestNotification = $notificationRow;
+        break;
+    }
+}
+if ($latestNotification === null) {
+    $latestNotification = $notifications[0] ?? null;
+}
 
 function pportFmtDate($d) {
     $d = trim((string)$d);
@@ -629,8 +649,8 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
         <div class="pp-topbar-r">
             <a href="?section=home" class="pp-alert-link" aria-label="الإشعارات">
                 🔔
-                <?php if (count($notifications) > 0): ?>
-                    <span class="pp-alert-count"><?php echo count($notifications); ?></span>
+                <?php if ($unreadNotificationCount > 0): ?>
+                    <span class="pp-alert-count"><?php echo $unreadNotificationCount; ?></span>
                 <?php endif; ?>
             </a>
             <div class="pp-user"><span>👤</span><span><?php echo pportEsc($player["name"]); ?></span></div>

@@ -532,6 +532,84 @@ function ensurePlayerNotificationsTableForPortal(PDO $pdo)
     }
 }
 
+function ensurePlayerNotificationReadsTable(PDO $pdo)
+{
+    static $alreadyEnsured = false;
+    if ($alreadyEnsured) {
+        return;
+    }
+    $alreadyEnsured = true;
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS player_notification_reads (
+            notification_id INT(11) NOT NULL,
+            player_id INT(11) NOT NULL,
+            read_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (notification_id, player_id),
+            KEY idx_player_notification_reads_player (player_id, read_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+}
+
+function fetchPlayerPortalNotifications(PDO $pdo, $gameId, $playerId, $groupId, $groupLevel, $limit = 50)
+{
+    ensurePlayerNotificationsTableForPortal($pdo);
+    ensurePlayerNotificationReadsTable($pdo);
+
+    $limit = max(1, (int)$limit);
+    $stmt = $pdo->prepare(
+        "SELECT n.id, n.title, n.message, n.notification_type, n.priority_level, n.target_scope,
+                n.display_date, n.created_at,
+                CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read
+         FROM player_notifications n
+         LEFT JOIN player_notification_reads r
+           ON r.notification_id = n.id AND r.player_id = ?
+         WHERE n.game_id = ? AND n.visibility_status = 'visible'
+           AND (
+                n.target_scope = 'all'
+                OR (n.target_scope = 'level' AND n.target_group_level = ?)
+                OR (n.target_scope = 'group' AND n.target_group_id = ?)
+                OR (n.target_scope = 'player' AND n.target_player_id = ?)
+           )
+         ORDER BY n.display_date DESC, n.id DESC
+         LIMIT {$limit}"
+    );
+    $stmt->execute([
+        (int)$playerId,
+        (int)$gameId,
+        trim((string)$groupLevel),
+        (int)$groupId,
+        (int)$playerId,
+    ]);
+
+    return $stmt->fetchAll();
+}
+
+function markPlayerPortalNotificationsAsRead(PDO $pdo, $playerId, array $notificationIds)
+{
+    ensurePlayerNotificationReadsTable($pdo);
+
+    $playerId = (int)$playerId;
+    if ($playerId <= 0) {
+        return;
+    }
+
+    $notificationIds = array_values(array_unique(array_filter(array_map("intval", $notificationIds))));
+    if (count($notificationIds) === 0) {
+        return;
+    }
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO player_notification_reads (notification_id, player_id, read_at)
+         VALUES (?, ?, CURRENT_TIMESTAMP)
+         ON DUPLICATE KEY UPDATE read_at = read_at"
+    );
+
+    foreach ($notificationIds as $notificationId) {
+        $stmt->execute([$notificationId, $playerId]);
+    }
+}
+
 function createPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $message, $notificationType = 'alert', $priorityLevel = 'important', $displayDate = null, $userId = null)
 {
     ensurePlayerNotificationsTableForPortal($pdo);

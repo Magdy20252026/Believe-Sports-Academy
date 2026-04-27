@@ -603,14 +603,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                         $previousGroupLevel = trim((string)($existingPlayer['group_level'] ?? ''));
                         $newPlayerLevel = trim((string)$formData['player_level']);
                         $newGroupLevel = trim((string)$selectedGroup['group_level']);
-                        if ($previousPlayerLevel !== $newPlayerLevel || $previousGroupLevel !== $newGroupLevel) {
-                            $levelMessage = ["تم تحديث مستواك من الإدارة."];
-                            if ($previousPlayerLevel !== $newPlayerLevel) {
-                                $levelMessage[] = "مستوى اللاعب الجديد: " . ($newPlayerLevel !== '' ? $newPlayerLevel : 'غير محدد');
-                            }
-                            if ($previousGroupLevel !== $newGroupLevel) {
-                                $levelMessage[] = "مستوى المجموعة الحالي: " . ($newGroupLevel !== '' ? $newGroupLevel : 'غير محدد');
-                            }
+                        if ($previousPlayerLevel !== $newPlayerLevel) {
+                            $levelMessage = ["تم تحديث مستوى اللاعب من الإدارة."];
+                            $levelMessage[] = "المستوى السابق: " . ($previousPlayerLevel !== '' ? $previousPlayerLevel : 'غير محدد');
+                            $levelMessage[] = "المستوى الجديد: " . ($newPlayerLevel !== '' ? $newPlayerLevel : 'غير محدد');
                             createPlayerNotification(
                                 $pdo,
                                 $currentGameId,
