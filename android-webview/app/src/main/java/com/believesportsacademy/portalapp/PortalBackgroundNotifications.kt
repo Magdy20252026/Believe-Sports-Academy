@@ -25,6 +25,8 @@ internal object PortalBackgroundNotifications {
 
     private const val PREFS_NAME = "portal_background_notifications"
     private const val ACTIVE_SESSION_KEY = "active_session_key"
+    // 15 minutes is the shortest practical background polling window we allow here to balance
+    // delivery after app closure with Android battery/doze constraints for recurring background work.
     private const val POLL_INTERVAL_MS = 15 * 60 * 1000L
     private const val REQUEST_CODE_POLL = 4102
 
