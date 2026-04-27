@@ -254,6 +254,7 @@ try {
 
 $notifications = [];
 $unreadNotificationCount = 0;
+$markedNotificationsAsRead = false;
 try {
     $notifications = fetchPlayerPortalNotifications(
         $pdo,
@@ -278,13 +279,16 @@ try {
         }
         markPlayerPortalNotificationsAsRead($pdo, $playerId, $unreadNotificationIds);
         $unreadNotificationCount = 0;
+        $markedNotificationsAsRead = true;
     }
 } catch (Throwable $ignored) {}
 $latestNotification = null;
-foreach ($notifications as $notificationRow) {
-    if ((int)($notificationRow["is_read"] ?? 0) === 0) {
-        $latestNotification = $notificationRow;
-        break;
+if (!$markedNotificationsAsRead) {
+    foreach ($notifications as $notificationRow) {
+        if ((int)($notificationRow["is_read"] ?? 0) === 0) {
+            $latestNotification = $notificationRow;
+            break;
+        }
     }
 }
 if ($latestNotification === null) {

@@ -600,9 +600,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                             savePentathlonPlayerSubGameSessions($pdo, $formData['id'], $currentGameId, $pentathlonInputSessions);
                         }
                         $previousPlayerLevel = trim((string)($existingPlayer['player_level'] ?? ''));
-                        $previousGroupLevel = trim((string)($existingPlayer['group_level'] ?? ''));
                         $newPlayerLevel = trim((string)$formData['player_level']);
-                        $newGroupLevel = trim((string)$selectedGroup['group_level']);
                         if ($previousPlayerLevel !== $newPlayerLevel) {
                             $levelMessage = ["تم تحديث مستوى اللاعب من الإدارة."];
                             $levelMessage[] = "المستوى السابق: " . ($previousPlayerLevel !== '' ? $previousPlayerLevel : 'غير محدد');
