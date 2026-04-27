@@ -639,7 +639,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 <div class="pp-root">
     <div class="pp-topbar">
         <div class="pp-topbar-l">
-            <button class="pp-burger" id="ppBurger" type="button" aria-label="القائمة">☰</button>
+            <button class="pp-burger" id="ppBurger" type="button" aria-label="القائمة" aria-controls="ppSidebar">☰</button>
             <div class="pp-brand">
                 <img src="<?php echo pportEsc($siteLogo); ?>" alt="logo">
                 <div>
@@ -1002,6 +1002,7 @@ window.__PORTAL_SESSION_GUARD__ = {
         if (!sidebar) return;
         sidebar.classList.remove('collapsed');
         sidebar.classList.add('show');
+        sidebar.setAttribute('aria-hidden', 'false');
         document.body.classList.add('pp-mobile-menu-open');
         if (sidebarOverlay) sidebarOverlay.classList.add('show');
         if (burger) burger.setAttribute('aria-expanded', 'true');
@@ -1010,6 +1011,7 @@ window.__PORTAL_SESSION_GUARD__ = {
     function closeMobileSidebar() {
         if (!sidebar) return;
         sidebar.classList.remove('show');
+        sidebar.setAttribute('aria-hidden', mobileMq.matches ? 'true' : 'false');
         document.body.classList.remove('pp-mobile-menu-open');
         if (sidebarOverlay) sidebarOverlay.classList.remove('show');
         if (burger) burger.setAttribute('aria-expanded', 'false');
@@ -1025,6 +1027,7 @@ window.__PORTAL_SESSION_GUARD__ = {
 
     if (burger && sidebar) {
         burger.setAttribute('aria-expanded', 'false');
+        sidebar.setAttribute('aria-hidden', mobileMq.matches ? 'true' : 'false');
         burger.addEventListener('click', function() {
             if (mobileMq.matches) {
                 if (sidebar.classList.contains('show')) {
