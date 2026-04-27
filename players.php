@@ -140,6 +140,12 @@ function normalizePlayerReturnTarget($value)
     return $value;
 }
 
+function encodePlayersPageJson($value, $fallback = 'null')
+{
+    $encoded = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE);
+    return $encoded !== false ? $encoded : $fallback;
+}
+
 $success = '';
 $error = '';
 $isManager = (string)($_SESSION['role'] ?? '') === 'مدير';
@@ -1613,9 +1619,9 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
 </div>
 
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
-<script id="playerGroupsData" type="application/json"><?php echo json_encode($groupsJson, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
-<script id="playerDayLabels" type="application/json"><?php echo json_encode(PLAYER_DAY_OPTIONS, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
-<script id="playerInitialDays" type="application/json"><?php echo json_encode(array_values($formData['training_day_keys']), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
+<script id="playerGroupsData" type="application/json"><?php echo encodePlayersPageJson($groupsJson, '{}'); ?></script>
+<script id="playerDayLabels" type="application/json"><?php echo encodePlayersPageJson(PLAYER_DAY_OPTIONS, '{}'); ?></script>
+<script id="playerInitialDays" type="application/json"><?php echo encodePlayersPageJson(array_values($formData['training_day_keys']), '[]'); ?></script>
 <script src="assets/js/script.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -1640,9 +1646,23 @@ document.addEventListener('DOMContentLoaded', function () {
     const subscriptionPriceDisplay = document.getElementById('subscription_price_display');
     const academyPercentageDisplay = document.getElementById('academy_percentage_display');
     const academyAmountDisplay = document.getElementById('academy_amount_display');
-    const groupsData = JSON.parse(document.getElementById('playerGroupsData').textContent || '{}');
-    const dayLabels = JSON.parse(document.getElementById('playerDayLabels').textContent || '{}');
-    let selectedDays = JSON.parse(document.getElementById('playerInitialDays').textContent || '[]');
+    const parseEmbeddedJson = function (elementId, fallbackValue) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            return fallbackValue;
+        }
+
+        try {
+            const rawValue = element.textContent || '';
+            return rawValue !== '' ? JSON.parse(rawValue) : fallbackValue;
+        } catch (error) {
+            console.error('Failed to parse embedded JSON for', elementId, error);
+            return fallbackValue;
+        }
+    };
+    const groupsData = parseEmbeddedJson('playerGroupsData', {});
+    const dayLabels = parseEmbeddedJson('playerDayLabels', {});
+    let selectedDays = parseEmbeddedJson('playerInitialDays', []);
 
     const hasPlayerFormQueryParam = function (parameterName, expectedValue) {
         const params = new URLSearchParams(window.location.search);
