@@ -5,4 +5,6 @@
     <string name="notification_permission_denied">لن تظهر الإشعارات حتى يتم منح صلاحية الإشعارات.</string>
     <string name="external_browser_error">تعذر فتح الرابط الخارجي.</string>
     <string name="portal_load_error">تعذر تحميل الصفحة.</string>
+    <string name="offline_cached_page_loaded">لا يوجد اتصال بالإنترنت، يتم عرض آخر نسخة محفوظة من الصفحة.</string>
+    <string name="offline_cached_page_missing">لا توجد نسخة محفوظة لهذه الصفحة لعرضها بدون إنترنت.</string>
 </resources>
