@@ -1026,8 +1026,8 @@ window.__PORTAL_SESSION_GUARD__ = {
     }
 
     if (burger && sidebar) {
-        burger.setAttribute('aria-expanded', 'false');
         sidebar.setAttribute('aria-hidden', mobileMq.matches ? 'true' : 'false');
+        burger.setAttribute('aria-expanded', 'false');
         burger.addEventListener('click', function() {
             if (mobileMq.matches) {
                 if (sidebar.classList.contains('show')) {
