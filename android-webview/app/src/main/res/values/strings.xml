@@ -1,0 +1,8 @@
+<resources>
+    <string name="notification_channel_name">إشعارات البوابة</string>
+    <string name="notification_channel_description">تنبيهات التطبيق القادمة من بوابة الأكاديمية.</string>
+    <string name="notification_default_title">إشعار جديد</string>
+    <string name="notification_permission_denied">لن تظهر الإشعارات حتى يتم منح صلاحية الإشعارات.</string>
+    <string name="external_browser_error">تعذر فتح الرابط الخارجي.</string>
+    <string name="portal_load_error">تعذر تحميل الصفحة.</string>
+</resources>

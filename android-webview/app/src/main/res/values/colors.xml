@@ -1,0 +1,5 @@
+<resources>
+    <color name="portal_primary">#0EA5E9</color>
+    <color name="portal_surface">#FFFFFF</color>
+    <color name="portal_on_surface">#0F172A</color>
+</resources>

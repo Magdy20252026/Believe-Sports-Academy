@@ -166,7 +166,7 @@ try {
 $notificationRows = [];
 try {
     $notifStmt = $pdo->prepare(
-        "SELECT title, message, notification_type, priority_level, display_date
+        "SELECT id, title, message, notification_type, priority_level, display_date
          FROM trainer_notifications
          WHERE game_id = ? AND visibility_status = 'visible'
          ORDER BY display_date DESC, id DESC
@@ -175,6 +175,8 @@ try {
     $notifStmt->execute([$trainerGameId]);
     $notificationRows = $notifStmt->fetchAll();
 } catch (PDOException $ignored) {}
+
+$latestNotification = $notificationRows[0] ?? null;
 
 $attendanceSummary = payrollSummarizeAttendanceRows($attendanceRows);
 $attendancePresent = (int)$attendanceSummary["attendance_days"];
@@ -970,6 +972,28 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
             }
         } else {
             el.outerHTML = '<div style="color:#64748b;font-weight:800;">لا يوجد باركود مسجل</div>';
+        }
+    }
+
+    var latestNotification = <?php echo json_encode($latestNotification ? [
+        "id" => (int)$latestNotification["id"],
+        "title" => (string)$latestNotification["title"],
+        "message" => (string)$latestNotification["message"],
+    ] : null, JSON_UNESCAPED_UNICODE); ?>;
+    if (
+        latestNotification &&
+        latestNotification.id &&
+        window.AndroidBridge &&
+        typeof window.AndroidBridge.showNotification === "function"
+    ) {
+        var storageKey = "trainer-portal-last-notification-<?php echo (int)$trainerId; ?>";
+        var lastSeenId = parseInt(sessionStorage.getItem(storageKey) || "0", 10);
+        if (!lastSeenId || latestNotification.id > lastSeenId) {
+            sessionStorage.setItem(storageKey, String(latestNotification.id));
+            window.AndroidBridge.showNotification(
+                latestNotification.title || "📣 إشعار جديد",
+                latestNotification.message || ""
+            );
         }
     }
 })();
