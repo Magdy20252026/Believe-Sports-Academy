@@ -593,7 +593,9 @@ function markPlayerPortalNotificationsAsRead(PDO $pdo, $playerId, array $notific
         return;
     }
 
-    $notificationIds = array_values(array_unique(array_filter(array_map("intval", $notificationIds))));
+    $notificationIds = array_values(array_unique(array_filter(array_map("intval", $notificationIds), static function ($notificationId) {
+        return $notificationId > 0;
+    })));
     if (count($notificationIds) === 0) {
         return;
     }

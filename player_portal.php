@@ -283,7 +283,9 @@ try {
         $unreadNotificationCount = 0;
         $latestNotification = null;
     }
-} catch (Throwable $ignored) {}
+} catch (Throwable $throwable) {
+    error_log("Failed to load player portal notifications: " . $throwable->getMessage());
+}
 
 function pportFmtDate($d) {
     $d = trim((string)$d);
