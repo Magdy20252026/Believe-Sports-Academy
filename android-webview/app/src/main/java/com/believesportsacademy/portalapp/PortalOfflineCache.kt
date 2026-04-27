@@ -46,9 +46,7 @@ internal object PortalOfflineCache {
     fun loadCachedPage(webView: WebView, url: String?): Boolean {
         val portalUrl = url?.takeIf(::isPortalUrl) ?: return false
         val archiveUrl = cachedArchiveUrl(webView.context.applicationContext, portalUrl) ?: return false
-        webView.post {
-            webView.loadUrl(archiveUrl)
-        }
+        webView.loadUrl(archiveUrl)
         return true
     }
 

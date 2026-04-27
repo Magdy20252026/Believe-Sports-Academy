@@ -125,10 +125,17 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, R.string.offline_cached_page_loaded, Toast.LENGTH_SHORT).show()
     }
 
+    private fun tryLoadCachedPageWithFeedback(url: String?): Boolean {
+        if (!PortalOfflineCache.loadCachedPage(binding.portalWebView, url)) {
+            return false
+        }
+        showOfflineCacheLoadedToast()
+        return true
+    }
+
     private fun loadInitialPortalUrl() {
         val targetUrl = PortalOfflineCache.lastSyncedUrl(this) ?: BuildConfig.PORTAL_URL
-        if (!PortalOfflineCache.isOnline(this) && PortalOfflineCache.loadCachedPage(binding.portalWebView, targetUrl)) {
-            showOfflineCacheLoadedToast()
+        if (!PortalOfflineCache.isOnline(this) && tryLoadCachedPageWithFeedback(targetUrl)) {
             return
         }
         binding.portalWebView.loadUrl(targetUrl)
@@ -151,8 +158,7 @@ class MainActivity : AppCompatActivity() {
             val scheme = uri.scheme?.lowercase().orEmpty()
             if (scheme == "http" || scheme == "https") {
                 if (request?.isForMainFrame == true && !PortalOfflineCache.isOnline(this@MainActivity)) {
-                    return if (PortalOfflineCache.loadCachedPage(binding.portalWebView, uri.toString())) {
-                        showOfflineCacheLoadedToast()
+                    return if (tryLoadCachedPageWithFeedback(uri.toString())) {
                         true
                     } else {
                         Toast.makeText(this@MainActivity, R.string.offline_cached_page_missing, Toast.LENGTH_SHORT).show()
@@ -187,8 +193,7 @@ class MainActivity : AppCompatActivity() {
             if (request?.isForMainFrame == true) {
                 binding.loadingIndicator.hide()
                 val failingUrl = request.url?.toString()
-                if (PortalOfflineCache.loadCachedPage(binding.portalWebView, failingUrl)) {
-                    showOfflineCacheLoadedToast()
+                if (tryLoadCachedPageWithFeedback(failingUrl)) {
                     return
                 }
                 val messageId = if (!PortalOfflineCache.isOnline(this@MainActivity) && !PortalOfflineCache.hasCachedPage(this@MainActivity, failingUrl)) {
