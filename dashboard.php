@@ -664,6 +664,7 @@ $unreadNotificationsCount = count($unreadAlertKeys);
                 }
                 unreadAlertKeys = [];
                 setUnreadCount(0);
+                isMarkingRead = false;
             })
             .catch(function () {
                 isMarkingRead = false;

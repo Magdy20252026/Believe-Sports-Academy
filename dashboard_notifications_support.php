@@ -13,10 +13,52 @@ function ensureDashboardNotificationReadsTable(PDO $pdo)
             game_id INT(11) NOT NULL,
             alert_key VARCHAR(191) NOT NULL,
             read_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_id, game_id, alert_key),
-            KEY idx_dashboard_notification_reads_lookup (user_id, game_id, read_at)
+            PRIMARY KEY (user_id, game_id, alert_key)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
     );
+
+    $databaseName = (string)$pdo->query("SELECT DATABASE()")->fetchColumn();
+    if ($databaseName === "") {
+        return;
+    }
+
+    $constraintsStmt = $pdo->prepare(
+        "SELECT CONSTRAINT_NAME
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = ?
+           AND TABLE_NAME = 'dashboard_notification_reads'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    );
+    $constraintsStmt->execute([$databaseName]);
+    $existingConstraints = array_column($constraintsStmt->fetchAll(), "CONSTRAINT_NAME");
+
+    $indexesStmt = $pdo->prepare(
+        "SELECT INDEX_NAME
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = ?
+           AND TABLE_NAME = 'dashboard_notification_reads'
+           AND INDEX_NAME = 'idx_dashboard_notification_reads_lookup'"
+    );
+    $indexesStmt->execute([$databaseName]);
+    if ($indexesStmt->fetchColumn()) {
+        $pdo->exec("ALTER TABLE dashboard_notification_reads DROP INDEX idx_dashboard_notification_reads_lookup");
+    }
+
+    if (!in_array("fk_dashboard_notification_reads_user", $existingConstraints, true)) {
+        $pdo->exec(
+            "ALTER TABLE dashboard_notification_reads
+             ADD CONSTRAINT fk_dashboard_notification_reads_user
+             FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE"
+        );
+    }
+
+    if (!in_array("fk_dashboard_notification_reads_game", $existingConstraints, true)) {
+        $pdo->exec(
+            "ALTER TABLE dashboard_notification_reads
+             ADD CONSTRAINT fk_dashboard_notification_reads_game
+             FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE"
+        );
+    }
 }
 
 function sanitizeDashboardNotificationKeys(array $alertKeys)
