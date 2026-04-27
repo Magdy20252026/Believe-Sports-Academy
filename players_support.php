@@ -89,6 +89,7 @@ function ensurePlayersTables(PDO $pdo)
             attendance_date DATE NOT NULL,
             attendance_day_key VARCHAR(20) NOT NULL,
             attendance_status VARCHAR(20) NOT NULL DEFAULT 'حضور',
+            attendance_minutes_late INT(11) NOT NULL DEFAULT 0,
             attendance_at DATETIME NULL DEFAULT NULL,
             created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -240,7 +241,8 @@ function ensurePlayersTables(PDO $pdo)
     $requiredAttendanceColumns = [
         'attendance_day_key' => "ALTER TABLE player_attendance ADD COLUMN attendance_day_key VARCHAR(20) NOT NULL DEFAULT '' AFTER attendance_date",
         'attendance_status' => "ALTER TABLE player_attendance ADD COLUMN attendance_status VARCHAR(20) NOT NULL DEFAULT 'حضور' AFTER attendance_day_key",
-        'attendance_at' => "ALTER TABLE player_attendance ADD COLUMN attendance_at DATETIME NULL DEFAULT NULL AFTER attendance_status",
+        'attendance_minutes_late' => "ALTER TABLE player_attendance ADD COLUMN attendance_minutes_late INT(11) NOT NULL DEFAULT 0 AFTER attendance_status",
+        'attendance_at' => "ALTER TABLE player_attendance ADD COLUMN attendance_at DATETIME NULL DEFAULT NULL AFTER attendance_minutes_late",
         'pentathlon_sub_game' => "ALTER TABLE player_attendance ADD COLUMN pentathlon_sub_game VARCHAR(100) NOT NULL DEFAULT '' AFTER attendance_at",
         'attendance_source' => "ALTER TABLE player_attendance ADD COLUMN attendance_source VARCHAR(50) NOT NULL DEFAULT '' AFTER pentathlon_sub_game",
     ];

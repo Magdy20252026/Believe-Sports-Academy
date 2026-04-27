@@ -200,6 +200,46 @@ function buildPlayerAttendanceLateBlockMessage(array $player, DateTimeImmutable 
     return "تم احتساب غياب اليوم" . $playerNameLabel . " لأنه تأخر أكثر من " . PLAYER_ATTENDANCE_LATE_LIMIT_MINUTES . " دقيقة عن موعد التمرين. لا يمكن تسجيل الحضور.";
 }
 
+function calculatePlayerAttendanceMinutesLate(array $player, DateTimeImmutable $now, DateTimeImmutable $today)
+{
+    $trainingTime = normalizeTrainingTimeValue($player["training_time"] ?? "");
+    if ($trainingTime === "") {
+        return 0;
+    }
+
+    try {
+        $scheduledDateTime = new DateTimeImmutable(
+            $today->format("Y-m-d") . " " . $trainingTime,
+            new DateTimeZone("Africa/Cairo")
+        );
+    } catch (Exception $exception) {
+        return 0;
+    }
+
+    $secondsLate = $now->getTimestamp() - $scheduledDateTime->getTimestamp();
+    if ($secondsLate <= 0) {
+        return 0;
+    }
+
+    return (int)floor($secondsLate / 60);
+}
+
+function buildPlayerAttendanceLateNotificationMessage(array $player, DateTimeImmutable $attendanceDate, $minutesLate)
+{
+    $minutesLate = max(0, (int)$minutesLate);
+    $messageLines = [
+        "تم تسجيل تأخيرك بتاريخ " . $attendanceDate->format("Y/m/d") . ".",
+        "عدد دقائق التأخير: " . $minutesLate . " دقيقة.",
+    ];
+
+    $trainingTimeLabel = formatTrainingTimeDisplay($player["training_time"] ?? "");
+    if ($trainingTimeLabel !== "") {
+        $messageLines[] = "موعد التمرين: " . $trainingTimeLabel . ".";
+    }
+
+    return implode("\n", $messageLines);
+}
+
 function canPlayerReceiveAttendanceMark(array $player, DateTimeImmutable $today, $dayKey, $allowExistingTodayRecord = false)
 {
     $startDate = trim((string)($player["subscription_start_date"] ?? ""));
@@ -733,6 +773,7 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
     $dayKey = getPlayerAttendanceDayKeyFromDate($today);
     $isScheduledDay = isPlayerAttendanceScheduledForDay($player, $dayKey);
     $lateCutoff = $isScheduledDay ? getPlayerAttendanceLateCutoffDateTime($player, $today) : null;
+    $attendanceMinutesLate = $isScheduledDay ? calculatePlayerAttendanceMinutesLate($player, $now, $today) : 0;
 
     $pdo->beginTransaction();
     try {
@@ -769,11 +810,12 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                     "INSERT INTO player_attendance (
                         game_id,
                         player_id,
-                        attendance_date,
-                        attendance_day_key,
-                        attendance_status,
-                        attendance_at
-                    ) VALUES (?, ?, ?, ?, ?, NULL)"
+                    attendance_date,
+                    attendance_day_key,
+                    attendance_status,
+                    attendance_minutes_late,
+                    attendance_at
+                    ) VALUES (?, ?, ?, ?, ?, 0, NULL)"
                 );
                 $insertAbsentStmt->execute([
                     (int)$gameId,
@@ -809,11 +851,12 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
         if ($existingRecord) {
             $updateStmt = $pdo->prepare(
                 "UPDATE player_attendance
-                 SET attendance_status = ?, attendance_at = ?, pentathlon_sub_game = ?
+                 SET attendance_status = ?, attendance_minutes_late = ?, attendance_at = ?, pentathlon_sub_game = ?
                  WHERE id = ?"
             );
             $updateStmt->execute([
                 PLAYER_ATTENDANCE_STATUS_PRESENT,
+                $attendanceMinutesLate,
                 $now->format("Y-m-d H:i:s"),
                 $pentathlonSubGame,
                 (int)$existingRecord["id"],
@@ -827,9 +870,10 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                     attendance_date,
                     attendance_day_key,
                     attendance_status,
+                    attendance_minutes_late,
                     attendance_at,
                     pentathlon_sub_game
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             );
             $insertPresentStmt->execute([
                 (int)$gameId,
@@ -837,10 +881,24 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                 $todayDate,
                 $dayKey,
                 PLAYER_ATTENDANCE_STATUS_PRESENT,
+                $attendanceMinutesLate,
                 $now->format("Y-m-d H:i:s"),
                 $pentathlonSubGame,
             ]);
             auditTrack($pdo, "create", "player_attendance", (int)$pdo->lastInsertId(), "حضور اللاعبين", "تسجيل حضور اللاعب: " . (string)$player["name"]);
+        }
+
+        if ($attendanceMinutesLate > 0) {
+            createPlayerNotification(
+                $pdo,
+                $gameId,
+                (int)$player["id"],
+                '⏰ تم تسجيل تأخير اليوم',
+                buildPlayerAttendanceLateNotificationMessage($player, $today, $attendanceMinutesLate),
+                'alert',
+                'important',
+                $todayDate
+            );
         }
 
         $candidateIds = [];
@@ -888,8 +946,9 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                     attendance_date,
                     attendance_day_key,
                     attendance_status,
+                    attendance_minutes_late,
                     attendance_at
-                ) VALUES (?, ?, ?, ?, ?, NULL)"
+                ) VALUES (?, ?, ?, ?, ?, 0, NULL)"
             );
 
             foreach ($candidateIds as $candidateId) {

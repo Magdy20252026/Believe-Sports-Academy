@@ -242,23 +242,38 @@ function fetchDashboardConsecutiveAbsenceAlerts(PDO $pdo, $gameId)
     return $alerts;
 }
 
-function fetchDashboardSubscriptionExpiryAlerts(PDO $pdo, $gameId, DateTimeImmutable $today)
+function fetchDashboardExpiredSubscriptionAlerts(PDO $pdo, $gameId, DateTimeImmutable $today)
 {
     if ((int)$gameId <= 0) { return []; }
-    $todayStr = $today->format("Y-m-d");
-    $weekAhead = $today->modify("+7 days")->format("Y-m-d");
+    $presentStatus = PLAYER_ATTENDANCE_STATUS_PRESENT;
     $sql = "SELECT p.id, p.barcode, p.name, p.phone,
                    COALESCE(p.phone2, '') AS phone2,
                    p.group_name, p.group_level, p.trainer_name,
-                   p.subscription_end_date
+                   p.subscription_end_date, p.total_trainings,
+                   SUM(
+                       CASE
+                           WHEN COALESCE(NULLIF(pa.attendance_status, ''), ?) = ?
+                           THEN 1
+                           ELSE 0
+                       END
+                   ) AS attendance_count
             FROM players p
+            LEFT JOIN player_attendance pa
+                ON pa.player_id = p.id
+               AND pa.attendance_date BETWEEN p.subscription_start_date AND p.subscription_end_date
             WHERE p.game_id = ?
-              AND p.subscription_end_date BETWEEN ? AND ?
-            ORDER BY p.subscription_end_date ASC";
+            GROUP BY p.id
+            ORDER BY p.subscription_end_date ASC, p.id DESC";
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([(int)$gameId, $todayStr, $weekAhead]);
+    $stmt->execute([$presentStatus, $presentStatus, (int)$gameId]);
     $alerts = [];
     foreach ($stmt->fetchAll() as $p) {
+        $daysRemaining = calculatePlayerDaysRemaining($p["subscription_end_date"] ?? "", $today);
+        $remainingTrainings = calculatePlayerRemainingTrainings($p["total_trainings"] ?? 0, $p["attendance_count"] ?? 0);
+        if (getPlayerSubscriptionStatus($daysRemaining, $remainingTrainings) !== "منتهي") {
+            continue;
+        }
+
         $alerts[] = [
             "type" => "expiry",
             "barcode" => (string)$p["barcode"],
@@ -268,15 +283,102 @@ function fetchDashboardSubscriptionExpiryAlerts(PDO $pdo, $gameId, DateTimeImmut
             "group_name" => (string)$p["group_name"],
             "group_level" => (string)$p["group_level"],
             "trainer_name" => (string)$p["trainer_name"],
-            "detail" => "ينتهي الاشتراك في " . (string)$p["subscription_end_date"],
+            "detail" => "انتهى الاشتراك في " . (string)$p["subscription_end_date"],
         ];
     }
     return $alerts;
 }
 
+function fetchDashboardStaffAttendanceAlerts(PDO $pdo, $gameId, DateTimeImmutable $today)
+{
+    if ((int)$gameId <= 0) {
+        return [];
+    }
+
+    $attendanceDate = $today->format("Y-m-d");
+    $alerts = [];
+
+    $trainerStmt = $pdo->prepare(
+        "SELECT 'trainer' AS staff_type,
+                t.barcode,
+                t.name,
+                t.phone,
+                ta.attendance_date,
+                ta.attendance_status,
+                ta.attendance_minutes_late,
+                ta.day_status
+         FROM trainer_attendance ta
+         INNER JOIN trainers t ON t.id = ta.trainer_id
+         WHERE ta.game_id = ?
+           AND ta.attendance_date = ?
+           AND (
+                ta.day_status = 'غياب'
+                OR ta.attendance_status = 'غياب'
+                OR ta.attendance_minutes_late > 0
+           )
+         ORDER BY ta.id DESC"
+    );
+    $trainerStmt->execute([(int)$gameId, $attendanceDate]);
+
+    foreach ($trainerStmt->fetchAll() as $row) {
+        $isAbsent = (string)($row["day_status"] ?? "") === "غياب" || (string)($row["attendance_status"] ?? "") === "غياب";
+        $alerts[] = [
+            "staff_label" => "مدرب",
+            "barcode" => (string)($row["barcode"] ?? ""),
+            "name" => (string)($row["name"] ?? ""),
+            "phone" => (string)($row["phone"] ?? ""),
+            "detail" => $isAbsent
+                ? "تاريخ الغياب: " . (string)($row["attendance_date"] ?? $attendanceDate)
+                : "دقائق التأخير: " . (int)($row["attendance_minutes_late"] ?? 0),
+            "status_badge" => $isAbsent ? "غياب" : "تأخير",
+            "status_class" => $isAbsent ? "danger" : "warning",
+        ];
+    }
+
+    $adminStmt = $pdo->prepare(
+        "SELECT 'admin' AS staff_type,
+                a.barcode,
+                a.name,
+                a.phone,
+                aa.attendance_date,
+                aa.attendance_status,
+                aa.attendance_minutes_late,
+                aa.day_status
+         FROM admin_attendance aa
+         INNER JOIN admins a ON a.id = aa.admin_id
+         WHERE aa.game_id = ?
+           AND aa.attendance_date = ?
+           AND (
+                aa.day_status = 'غياب'
+                OR aa.attendance_status = 'غياب'
+                OR aa.attendance_minutes_late > 0
+           )
+         ORDER BY aa.id DESC"
+    );
+    $adminStmt->execute([(int)$gameId, $attendanceDate]);
+
+    foreach ($adminStmt->fetchAll() as $row) {
+        $isAbsent = (string)($row["day_status"] ?? "") === "غياب" || (string)($row["attendance_status"] ?? "") === "غياب";
+        $alerts[] = [
+            "staff_label" => "إداري",
+            "barcode" => (string)($row["barcode"] ?? ""),
+            "name" => (string)($row["name"] ?? ""),
+            "phone" => (string)($row["phone"] ?? ""),
+            "detail" => $isAbsent
+                ? "تاريخ الغياب: " . (string)($row["attendance_date"] ?? $attendanceDate)
+                : "دقائق التأخير: " . (int)($row["attendance_minutes_late"] ?? 0),
+            "status_badge" => $isAbsent ? "غياب" : "تأخير",
+            "status_class" => $isAbsent ? "danger" : "warning",
+        ];
+    }
+
+    return $alerts;
+}
+
 $absenceAlerts = fetchDashboardConsecutiveAbsenceAlerts($pdo, $currentGameId);
-$expiryAlerts = fetchDashboardSubscriptionExpiryAlerts($pdo, $currentGameId, $egyptNow);
-$totalNotifications = count($absenceAlerts) + count($expiryAlerts);
+$expiredSubscriptionAlerts = fetchDashboardExpiredSubscriptionAlerts($pdo, $currentGameId, $egyptNow);
+$staffAttendanceAlerts = fetchDashboardStaffAttendanceAlerts($pdo, $currentGameId, $egyptNow);
+$totalNotifications = count($absenceAlerts) + count($expiredSubscriptionAlerts) + count($staffAttendanceAlerts);
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -342,16 +444,34 @@ $totalNotifications = count($absenceAlerts) + count($expiryAlerts);
                                     </div>
                                 <?php endforeach; ?>
                             <?php endif; ?>
-                            <?php if (count($expiryAlerts) > 0): ?>
+                            <?php if (count($expiredSubscriptionAlerts) > 0): ?>
                                 <div style="padding:10px 14px; background:#fffbeb; color:#92400e; font-weight:700; border-bottom:1px solid #fef3c7;">
-                                    ⏳ اقتراب انتهاء الاشتراك (<?php echo count($expiryAlerts); ?>)
+                                    ⛔ اشتراكات منتهية (<?php echo count($expiredSubscriptionAlerts); ?>)
                                 </div>
-                                <?php foreach ($expiryAlerts as $a): ?>
+                                <?php foreach ($expiredSubscriptionAlerts as $a): ?>
                                     <div style="padding:10px 14px; border-bottom:1px solid #f1f5f9;">
                                         <div style="font-weight:800; color:#0f172a; margin-bottom:4px;"><?php echo htmlspecialchars($a["name"], ENT_QUOTES, 'UTF-8'); ?></div>
                                         <div style="font-size:13px; color:#475569; margin-bottom:2px;">📊 الباركود: <strong><?php echo htmlspecialchars($a["barcode"] !== "" ? $a["barcode"] : "—", ENT_QUOTES, 'UTF-8'); ?></strong></div>
                                         <div style="font-size:13px; color:#475569;">📞 <?php echo htmlspecialchars($a["phone"] !== "" ? $a["phone"] : "—", ENT_QUOTES, 'UTF-8'); ?><?php if ($a["phone2"] !== ""): ?> | 📱 <?php echo htmlspecialchars($a["phone2"], ENT_QUOTES, 'UTF-8'); ?><?php endif; ?></div>
                                         <div style="font-size:12px; color:#92400e; margin-top:4px;"><?php echo htmlspecialchars($a["detail"], ENT_QUOTES, 'UTF-8'); ?></div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                            <?php if (count($staffAttendanceAlerts) > 0): ?>
+                                <div style="padding:10px 14px; background:#eff6ff; color:#1d4ed8; font-weight:700; border-bottom:1px solid #dbeafe;">
+                                    👥 تأخير وغياب المدربين والإداريين (<?php echo count($staffAttendanceAlerts); ?>)
+                                </div>
+                                <?php foreach ($staffAttendanceAlerts as $a): ?>
+                                    <div style="padding:10px 14px; border-bottom:1px solid #f1f5f9;">
+                                        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;">
+                                            <div style="font-weight:800; color:#0f172a;"><?php echo htmlspecialchars($a["staff_label"] . " / " . $a["name"], ENT_QUOTES, 'UTF-8'); ?></div>
+                                            <span style="display:inline-flex; align-items:center; justify-content:center; min-width:64px; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:800; background:<?php echo $a["status_class"] === "danger" ? "#fef2f2" : "#fffbeb"; ?>; color:<?php echo $a["status_class"] === "danger" ? "#b91c1c" : "#92400e"; ?>;">
+                                                <?php echo htmlspecialchars($a["status_badge"], ENT_QUOTES, 'UTF-8'); ?>
+                                            </span>
+                                        </div>
+                                        <div style="font-size:13px; color:#475569; margin-bottom:2px;">📊 الباركود: <strong><?php echo htmlspecialchars($a["barcode"] !== "" ? $a["barcode"] : "—", ENT_QUOTES, 'UTF-8'); ?></strong></div>
+                                        <div style="font-size:13px; color:#475569;">📞 <?php echo htmlspecialchars($a["phone"] !== "" ? $a["phone"] : "—", ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <div style="font-size:12px; color:#1d4ed8; margin-top:4px;"><?php echo htmlspecialchars($a["detail"], ENT_QUOTES, 'UTF-8'); ?></div>
                                     </div>
                                 <?php endforeach; ?>
                             <?php endif; ?>

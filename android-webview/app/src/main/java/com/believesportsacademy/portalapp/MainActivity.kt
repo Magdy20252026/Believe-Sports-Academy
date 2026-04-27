@@ -12,6 +12,7 @@ import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
@@ -64,11 +65,15 @@ class MainActivity : AppCompatActivity() {
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.databaseEnabled = true
+            settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.loadsImagesAutomatically = true
             settings.javaScriptCanOpenWindowsAutomatically = true
+            settings.setSupportMultipleWindows(false)
             settings.useWideViewPort = true
             settings.loadWithOverviewMode = true
             settings.mediaPlaybackRequiresUserGesture = false
+            settings.builtInZoomControls = false
+            settings.displayZoomControls = false
             addJavascriptInterface(PortalJavascriptBridge(), JAVASCRIPT_BRIDGE_NAME)
             webViewClient = PortalWebViewClient()
         }
@@ -79,17 +84,34 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState == null) {
             loadInitialPortalUrl()
         } else {
-            binding.portalWebView.restoreState(savedInstanceState)
+            val restored = try {
+                binding.portalWebView.restoreState(savedInstanceState)
+            } catch (_: Throwable) {
+                null
+            }
+            if (restored == null) {
+                loadInitialPortalUrl()
+            }
         }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        binding.portalWebView.saveState(outState)
+        try {
+            binding.portalWebView.saveState(outState)
+        } catch (_: Throwable) {
+        }
     }
 
     override fun onDestroy() {
-        binding.portalWebView.removeJavascriptInterface(JAVASCRIPT_BRIDGE_NAME)
+        try {
+            binding.portalWebView.removeJavascriptInterface(JAVASCRIPT_BRIDGE_NAME)
+            binding.portalWebView.stopLoading()
+            binding.portalWebView.clearHistory()
+            binding.portalWebView.removeAllViews()
+            binding.portalWebView.destroy()
+        } catch (_: Throwable) {
+        }
         super.onDestroy()
     }
 
@@ -138,7 +160,11 @@ class MainActivity : AppCompatActivity() {
         if (!PortalOfflineCache.isOnline(this) && tryLoadCachedPageWithFeedback(targetUrl)) {
             return
         }
-        binding.portalWebView.loadUrl(targetUrl)
+        try {
+            binding.portalWebView.loadUrl(targetUrl)
+        } catch (_: Throwable) {
+            Toast.makeText(this, R.string.portal_load_error, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun refreshOfflineArchiveIfNeeded() {
@@ -149,7 +175,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val remoteUrl = PortalOfflineCache.lastSyncedUrl(this) ?: BuildConfig.PORTAL_URL
-        binding.portalWebView.loadUrl(remoteUrl)
+        try {
+            binding.portalWebView.loadUrl(remoteUrl)
+        } catch (_: Throwable) {
+            Toast.makeText(this, R.string.portal_load_error, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private inner class PortalWebViewClient : WebViewClient() {
