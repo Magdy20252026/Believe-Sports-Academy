@@ -1011,7 +1011,18 @@ window.__PORTAL_SESSION_GUARD__ = {
     function closeMobileSidebar() {
         if (!sidebar) return;
         sidebar.classList.remove('show');
-        sidebar.setAttribute('aria-hidden', mobileMq.matches ? 'true' : 'false');
+        document.body.classList.remove('pp-mobile-menu-open');
+        if (sidebarOverlay) sidebarOverlay.classList.remove('show');
+        if (burger) burger.setAttribute('aria-expanded', 'false');
+        if (mobileMq.matches) {
+            sidebar.setAttribute('aria-hidden', 'true');
+        }
+    }
+
+    function syncDesktopSidebarState() {
+        if (!sidebar) return;
+        sidebar.classList.remove('show');
+        sidebar.removeAttribute('aria-hidden');
         document.body.classList.remove('pp-mobile-menu-open');
         if (sidebarOverlay) sidebarOverlay.classList.remove('show');
         if (burger) burger.setAttribute('aria-expanded', 'false');
@@ -1019,14 +1030,20 @@ window.__PORTAL_SESSION_GUARD__ = {
 
     function syncSidebarMode() {
         if (!sidebar) return;
-        closeMobileSidebar();
         if (mobileMq.matches) {
             sidebar.classList.remove('collapsed');
+            closeMobileSidebar();
+        } else {
+            syncDesktopSidebarState();
         }
     }
 
     if (burger && sidebar) {
-        sidebar.setAttribute('aria-hidden', mobileMq.matches ? 'true' : 'false');
+        if (mobileMq.matches) {
+            sidebar.setAttribute('aria-hidden', 'true');
+        } else {
+            sidebar.removeAttribute('aria-hidden');
+        }
         burger.setAttribute('aria-expanded', 'false');
         burger.addEventListener('click', function() {
             if (mobileMq.matches) {
@@ -1036,7 +1053,7 @@ window.__PORTAL_SESSION_GUARD__ = {
                     openMobileSidebar();
                 }
             } else {
-                closeMobileSidebar();
+                syncDesktopSidebarState();
                 sidebar.classList.toggle('collapsed');
             }
         });
