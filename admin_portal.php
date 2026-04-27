@@ -1,13 +1,8 @@
 <?php
 date_default_timezone_set("Africa/Cairo");
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-
-header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
-header("Pragma: no-cache");
-header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
+require_once "portal_session.php";
+startPortalSession("admin");
 
 if (!isset($_SESSION["admin_portal_logged_in"]) || $_SESSION["admin_portal_logged_in"] !== true) {
     header("Location: admin_portal_login.php");
@@ -980,6 +975,12 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
         "title" => (string)$latestNotification["title"],
         "message" => (string)$latestNotification["message"],
     ] : null, JSON_UNESCAPED_UNICODE); ?>;
+    if (window.AndroidBridge && typeof window.AndroidBridge.syncPortalState === "function") {
+        window.AndroidBridge.syncPortalState(
+            "admin:<?php echo (int)$adminId; ?>",
+            latestNotification && latestNotification.id ? String(latestNotification.id) : ""
+        );
+    }
     if (
         latestNotification &&
         latestNotification.id &&

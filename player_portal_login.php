@@ -1,13 +1,8 @@
 <?php
 date_default_timezone_set("Africa/Cairo");
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-
-header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
-header("Pragma: no-cache");
-header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
+require_once "portal_session.php";
+startPortalSession("player");
 
 if (isset($_SESSION["player_portal_logged_in"]) && $_SESSION["player_portal_logged_in"] === true) {
     header("Location: player_portal.php");
@@ -399,6 +394,9 @@ function ppEsc($s) { return htmlspecialchars((string)$s, ENT_QUOTES, "UTF-8"); }
 </div>
 
 <script>
+if (window.AndroidBridge && typeof window.AndroidBridge.clearPortalState === 'function') {
+    window.AndroidBridge.clearPortalState();
+}
 window.__PORTAL_SESSION_GUARD__ = {
     key: "player-portal",
     mode: "login",

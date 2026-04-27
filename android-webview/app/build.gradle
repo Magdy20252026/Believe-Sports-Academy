@@ -34,18 +34,21 @@ android {
             applicationIdSuffix '.players'
             versionNameSuffix '-players'
             buildConfigField 'String', 'PORTAL_URL', '"https://believe-sports-academy.gt.tc/admin/player_portal_login.php"'
+            buildConfigField 'String', 'NOTIFICATION_FEED_URL', '"https://believe-sports-academy.gt.tc/admin/player_portal_notifications_feed.php"'
         }
         admins {
             dimension 'portal'
             applicationIdSuffix '.admins'
             versionNameSuffix '-admins'
             buildConfigField 'String', 'PORTAL_URL', '"https://believe-sports-academy.gt.tc/admin/admin_portal_login.php"'
+            buildConfigField 'String', 'NOTIFICATION_FEED_URL', '"https://believe-sports-academy.gt.tc/admin/admin_portal_notifications_feed.php"'
         }
         trainers {
             dimension 'portal'
             applicationIdSuffix '.trainers'
             versionNameSuffix '-trainers'
             buildConfigField 'String', 'PORTAL_URL', '"https://believe-sports-academy.gt.tc/admin/trainer_portal_login.php"'
+            buildConfigField 'String', 'NOTIFICATION_FEED_URL', '"https://believe-sports-academy.gt.tc/admin/trainer_portal_notifications_feed.php"'
         }
     }
 

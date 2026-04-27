@@ -1,13 +1,8 @@
 <?php
 date_default_timezone_set("Africa/Cairo");
 
-if (session_status() !== PHP_SESSION_ACTIVE) {
-    session_start();
-}
-
-header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
-header("Pragma: no-cache");
-header("Expires: Thu, 01 Jan 1970 00:00:00 GMT");
+require_once "portal_session.php";
+startPortalSession("player");
 
 unset(
     $_SESSION["player_portal_logged_in"],
@@ -17,6 +12,8 @@ unset(
     $_SESSION["player_portal_site_name"],
     $_SESSION["player_portal_site_logo"]
 );
+
+destroyPortalSession("player");
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -27,6 +24,9 @@ unset(
 </head>
 <body>
 <script>
+if (window.AndroidBridge && typeof window.AndroidBridge.clearPortalState === 'function') {
+    window.AndroidBridge.clearPortalState();
+}
 window.__PORTAL_SESSION_GUARD__ = {
     key: "player-portal",
     mode: "logout",

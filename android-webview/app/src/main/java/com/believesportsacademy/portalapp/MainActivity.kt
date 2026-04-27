@@ -2,9 +2,6 @@ package com.believesportsacademy.portalapp
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -21,11 +18,8 @@ import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.believesportsacademy.portalapp.databinding.ActivityMainBinding
-import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
@@ -44,7 +38,8 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        createNotificationChannel()
+        PortalBackgroundNotifications.ensureNotificationChannel(this)
+        PortalBackgroundNotifications.schedule(this)
         requestNotificationPermissionIfNeeded()
         configureWebView(savedInstanceState)
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -93,6 +88,11 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
+    override fun onStop() {
+        PortalBackgroundNotifications.flushCookies()
+        super.onStop()
+    }
+
     private fun requestNotificationPermissionIfNeeded() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             return
@@ -101,21 +101,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-            return
-        }
-        val manager = getSystemService(NotificationManager::class.java)
-        val channel = NotificationChannel(
-            NOTIFICATION_CHANNEL_ID,
-            getString(R.string.notification_channel_name),
-            NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
-            description = getString(R.string.notification_channel_description)
-        }
-        manager.createNotificationChannel(channel)
     }
 
     private fun openExternalLink(uri: Uri) {
@@ -128,39 +113,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPortalNotification(title: String?, message: String?) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
-
-        val safeTitle = title?.trim().orEmpty().ifEmpty { getString(R.string.notification_default_title) }
-        val safeMessage = message?.trim().orEmpty()
-        if (safeMessage.isEmpty()) {
-            return
-        }
-
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            Random.nextInt(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(safeTitle)
-            .setContentText(safeMessage)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(safeMessage))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
-            .build()
-
-        NotificationManagerCompat.from(this).notify(Random.nextInt(), notification)
+        PortalBackgroundNotifications.showPortalNotification(this, title, message)
     }
 
     private inner class PortalWebViewClient : WebViewClient() {
@@ -182,6 +135,8 @@ class MainActivity : AppCompatActivity() {
         override fun onPageFinished(view: WebView?, url: String?) {
             super.onPageFinished(view, url)
             binding.loadingIndicator.hide()
+            PortalBackgroundNotifications.flushCookies()
+            PortalBackgroundNotifications.schedule(this@MainActivity)
         }
 
         override fun onReceivedError(
@@ -206,6 +161,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun syncPortalState(sessionKey: String?, latestNotificationId: String?) {
+            PortalBackgroundNotifications.syncPortalState(
+                this@MainActivity.applicationContext,
+                sessionKey,
+                latestNotificationId
+            )
+        }
+
+        @JavascriptInterface
+        fun clearPortalState() {
+            PortalBackgroundNotifications.clearPortalState(this@MainActivity.applicationContext)
+        }
+
+        @JavascriptInterface
         fun reloadPortal() {
             runOnUiThread {
                 binding.portalWebView.reload()
@@ -215,6 +184,5 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val JAVASCRIPT_BRIDGE_NAME = "AndroidBridge"
-        private const val NOTIFICATION_CHANNEL_ID = "portal_updates"
     }
 }
