@@ -2,6 +2,7 @@ package com.believesportsacademy.portalapp
 
 import android.Manifest
 import android.app.AlarmManager
+import android.graphics.Bitmap
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -31,6 +32,7 @@ internal object PortalBackgroundNotifications {
     // responsive than the previous 15-minute cycle without making wake-ups too aggressive.
     private val POLL_INTERVAL_MS = TimeUnit.MINUTES.toMillis(10)
     private const val POLL_ALARM_REQUEST_CODE = 4102
+    private var cachedLogoBitmap: Bitmap? = null
 
     fun schedule(context: Context) {
         if (!hasActivePortalSession(context)) {
@@ -112,7 +114,7 @@ internal object PortalBackgroundNotifications {
         ensureNotificationChannel(context)
         val appName = context.getString(R.string.app_name)
         val expandedText = buildNotificationBody(safeTitle, safeMessage)
-        val logoBitmap = BitmapFactory.decodeResource(context.resources, R.drawable.app_logo)
+        val logoBitmap = loadLogoBitmap(context)
 
         val launchIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
@@ -148,6 +150,10 @@ internal object PortalBackgroundNotifications {
     }
 
     fun pollOnce(context: Context) {
+        if (!hasActivePortalSession(context)) {
+            cancelSchedule(context)
+            return
+        }
         val payload = fetchPayload(context) ?: return
         if (payload.sessionKey.isBlank()) {
             return
@@ -236,6 +242,16 @@ internal object PortalBackgroundNotifications {
     private fun cancelSchedule(context: Context) {
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
         alarmManager.cancel(buildPollPendingIntent(context))
+    }
+
+    private fun loadLogoBitmap(context: Context): Bitmap? {
+        val cachedBitmap = cachedLogoBitmap
+        if (cachedBitmap != null && !cachedBitmap.isRecycled) {
+            return cachedBitmap
+        }
+        return BitmapFactory.decodeResource(context.resources, R.drawable.app_logo)?.also {
+            cachedLogoBitmap = it
+        }
     }
 
     private fun canPostNotifications(context: Context): Boolean {

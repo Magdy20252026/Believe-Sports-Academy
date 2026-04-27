@@ -323,10 +323,12 @@
         if (pollingStopped || inFlight) {
             return;
         }
+        inFlight = true;
         if (document.hidden) {
+            inFlight = false;
+            scheduleNextPoll();
             return;
         }
-        inFlight = true;
         fetch(buildEndpointUrl(), {
             method: "GET",
             credentials: "same-origin",
@@ -370,6 +372,9 @@
                 relaxPollingCadence();
             })
             .catch(function () {
+                if (window.console && typeof window.console.warn === "function") {
+                    window.console.warn("Portal live notification polling failed.");
+                }
                 stablePollCount = 0;
                 currentPollIntervalMs = Math.min(maxPollIntervalMs, currentPollIntervalMs + 5000);
             })
