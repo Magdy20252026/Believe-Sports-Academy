@@ -14,6 +14,7 @@ ensurePlayersTables($pdo);
 const PLAYER_ATTENDANCE_CANDIDATE_BATCH_SIZE = 200;
 const PLAYER_ATTENDANCE_SINGLE_TRAINING_LABEL = "تمرينة واحدة";
 const PLAYER_ATTENDANCE_LATE_LIMIT_MINUTES = 180;
+const PLAYER_ATTENDANCE_DEFAULT_MINUTES_LATE = 0;
 
 function formatPlayerAttendanceStatusBadgeClass($status)
 {
@@ -224,7 +225,7 @@ function calculatePlayerAttendanceMinutesLate(array $player, DateTimeImmutable $
     return (int)floor($secondsLate / 60);
 }
 
-function buildPlayerAttendanceLateNotificationMessage(array $player, DateTimeImmutable $attendanceDate, $minutesLate)
+function buildPlayerAttendanceLateNotificationMessage(array $player, DateTimeImmutable $attendanceDate, int $minutesLate)
 {
     $minutesLate = max(0, (int)$minutesLate);
     $messageLines = [
@@ -815,7 +816,7 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                     attendance_status,
                     attendance_minutes_late,
                     attendance_at
-                    ) VALUES (?, ?, ?, ?, ?, 0, NULL)"
+                    ) VALUES (?, ?, ?, ?, ?, ?, NULL)"
                 );
                 $insertAbsentStmt->execute([
                     (int)$gameId,
@@ -823,6 +824,7 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                     $todayDate,
                     $dayKey,
                     PLAYER_ATTENDANCE_STATUS_ABSENT,
+                    PLAYER_ATTENDANCE_DEFAULT_MINUTES_LATE,
                 ]);
                 auditTrack($pdo, "create", "player_attendance", (int)$pdo->lastInsertId(), "حضور اللاعبين", "احتساب غياب بسبب التأخير للاعب: " . (string)$player["name"]);
                 $lateCutoffLabel = formatTrainingTimeDisplay($lateCutoff->format("H:i:s"));
@@ -893,7 +895,7 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                 $pdo,
                 $gameId,
                 (int)$player["id"],
-                '⏰ تم تسجيل تأخير اليوم',
+                '⏰ تم تسجيل تأخيرك اليوم',
                 buildPlayerAttendanceLateNotificationMessage($player, $today, $attendanceMinutesLate),
                 'alert',
                 'important',
@@ -948,7 +950,7 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                     attendance_status,
                     attendance_minutes_late,
                     attendance_at
-                ) VALUES (?, ?, ?, ?, ?, 0, NULL)"
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL)"
             );
 
             foreach ($candidateIds as $candidateId) {
@@ -962,6 +964,7 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
                     $todayDate,
                     $dayKey,
                     PLAYER_ATTENDANCE_STATUS_ABSENT,
+                    PLAYER_ATTENDANCE_DEFAULT_MINUTES_LATE,
                 ]);
                 if (isset($playersById[$candidateId])) {
                     createPlayerNotification(

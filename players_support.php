@@ -668,6 +668,17 @@ function createPlayerNotification(PDO $pdo, $gameId, $playerId, $title, $message
             $userId,
             $userId,
         ]);
+        $notificationId = (int)$pdo->lastInsertId();
+        if ($notificationId > 0 && function_exists('auditTrack')) {
+            auditTrack(
+                $pdo,
+                'create',
+                'player_notifications',
+                $notificationId,
+                'إشعارات اللاعبين',
+                'إرسال إشعار للاعب رقم ' . $playerId . ' بعنوان: ' . $title
+            );
+        }
         return true;
     } catch (Throwable $throwable) {
         error_log('Failed to create direct player notification: ' . $throwable->getMessage());

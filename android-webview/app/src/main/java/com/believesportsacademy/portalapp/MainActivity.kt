@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
@@ -84,12 +85,14 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState == null) {
             loadInitialPortalUrl()
         } else {
-            val restored = try {
+            val restoredSuccessfully = try {
                 binding.portalWebView.restoreState(savedInstanceState)
-            } catch (_: Throwable) {
-                null
+                !binding.portalWebView.url.isNullOrBlank() || binding.portalWebView.canGoBack()
+            } catch (exception: RuntimeException) {
+                Log.w(LOG_TAG, "Failed to restore WebView state, loading the portal directly instead.", exception)
+                false
             }
-            if (restored == null) {
+            if (!restoredSuccessfully) {
                 loadInitialPortalUrl()
             }
         }
@@ -99,18 +102,36 @@ class MainActivity : AppCompatActivity() {
         super.onSaveInstanceState(outState)
         try {
             binding.portalWebView.saveState(outState)
-        } catch (_: Throwable) {
+        } catch (exception: RuntimeException) {
+            Log.w(LOG_TAG, "Failed to save WebView state.", exception)
         }
     }
 
     override fun onDestroy() {
         try {
             binding.portalWebView.removeJavascriptInterface(JAVASCRIPT_BRIDGE_NAME)
+        } catch (exception: RuntimeException) {
+            Log.w(LOG_TAG, "Failed to remove the JavaScript bridge.", exception)
+        }
+        try {
             binding.portalWebView.stopLoading()
+        } catch (exception: RuntimeException) {
+            Log.w(LOG_TAG, "Failed to stop WebView loading.", exception)
+        }
+        try {
             binding.portalWebView.clearHistory()
+        } catch (exception: RuntimeException) {
+            Log.w(LOG_TAG, "Failed to clear WebView history.", exception)
+        }
+        try {
             binding.portalWebView.removeAllViews()
+        } catch (exception: RuntimeException) {
+            Log.w(LOG_TAG, "Failed to remove WebView child views.", exception)
+        }
+        try {
             binding.portalWebView.destroy()
-        } catch (_: Throwable) {
+        } catch (exception: RuntimeException) {
+            Log.w(LOG_TAG, "Failed to destroy the WebView.", exception)
         }
         super.onDestroy()
     }
@@ -162,7 +183,8 @@ class MainActivity : AppCompatActivity() {
         }
         try {
             binding.portalWebView.loadUrl(targetUrl)
-        } catch (_: Throwable) {
+        } catch (exception: RuntimeException) {
+            Log.w(LOG_TAG, "Failed to load the initial portal URL.", exception)
             Toast.makeText(this, R.string.portal_load_error, Toast.LENGTH_SHORT).show()
         }
     }
@@ -177,7 +199,8 @@ class MainActivity : AppCompatActivity() {
         val remoteUrl = PortalOfflineCache.lastSyncedUrl(this) ?: BuildConfig.PORTAL_URL
         try {
             binding.portalWebView.loadUrl(remoteUrl)
-        } catch (_: Throwable) {
+        } catch (exception: RuntimeException) {
+            Log.w(LOG_TAG, "Failed to refresh the remote portal URL.", exception)
             Toast.makeText(this, R.string.portal_load_error, Toast.LENGTH_SHORT).show()
         }
     }
@@ -267,6 +290,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val LOG_TAG = "MainActivity"
         private const val JAVASCRIPT_BRIDGE_NAME = "AndroidBridge"
     }
 }

@@ -246,6 +246,7 @@ function fetchDashboardExpiredSubscriptionAlerts(PDO $pdo, $gameId, DateTimeImmu
 {
     if ((int)$gameId <= 0) { return []; }
     $presentStatus = PLAYER_ATTENDANCE_STATUS_PRESENT;
+    $todayDate = $today->format("Y-m-d");
     $sql = "SELECT p.id, p.barcode, p.name, p.phone,
                    COALESCE(p.phone2, '') AS phone2,
                    p.group_name, p.group_level, p.trainer_name,
@@ -263,9 +264,16 @@ function fetchDashboardExpiredSubscriptionAlerts(PDO $pdo, $gameId, DateTimeImmu
                AND pa.attendance_date BETWEEN p.subscription_start_date AND p.subscription_end_date
             WHERE p.game_id = ?
             GROUP BY p.id
+            HAVING (
+                CASE
+                    WHEN p.subscription_end_date <= ? THEN 0
+                    ELSE DATEDIFF(p.subscription_end_date, ?)
+                END
+            ) = 0
+               OR GREATEST(0, COALESCE(p.total_trainings, 0) - attendance_count) = 0
             ORDER BY p.subscription_end_date ASC, p.id DESC";
     $stmt = $pdo->prepare($sql);
-    $stmt->execute([$presentStatus, $presentStatus, (int)$gameId]);
+    $stmt->execute([$presentStatus, $presentStatus, (int)$gameId, $todayDate, $todayDate]);
     $alerts = [];
     foreach ($stmt->fetchAll() as $p) {
         $daysRemaining = calculatePlayerDaysRemaining($p["subscription_end_date"] ?? "", $today);
@@ -445,8 +453,8 @@ $totalNotifications = count($absenceAlerts) + count($expiredSubscriptionAlerts) 
                                 <?php endforeach; ?>
                             <?php endif; ?>
                             <?php if (count($expiredSubscriptionAlerts) > 0): ?>
-                                <div style="padding:10px 14px; background:#fffbeb; color:#92400e; font-weight:700; border-bottom:1px solid #fef3c7;">
-                                    ⛔ اشتراكات منتهية (<?php echo count($expiredSubscriptionAlerts); ?>)
+                                <div aria-label="تنبيه اشتراكات منتهية" style="padding:10px 14px; background:#fffbeb; color:#92400e; font-weight:700; border-bottom:1px solid #fef3c7;">
+                                    <span aria-hidden="true">⛔</span> اشتراكات منتهية (<?php echo count($expiredSubscriptionAlerts); ?>)
                                 </div>
                                 <?php foreach ($expiredSubscriptionAlerts as $a): ?>
                                     <div style="padding:10px 14px; border-bottom:1px solid #f1f5f9;">
@@ -458,14 +466,18 @@ $totalNotifications = count($absenceAlerts) + count($expiredSubscriptionAlerts) 
                                 <?php endforeach; ?>
                             <?php endif; ?>
                             <?php if (count($staffAttendanceAlerts) > 0): ?>
-                                <div style="padding:10px 14px; background:#eff6ff; color:#1d4ed8; font-weight:700; border-bottom:1px solid #dbeafe;">
-                                    👥 تأخير وغياب المدربين والإداريين (<?php echo count($staffAttendanceAlerts); ?>)
+                                <div aria-label="تنبيه تأخير وغياب المدربين والإداريين" style="padding:10px 14px; background:#eff6ff; color:#1d4ed8; font-weight:700; border-bottom:1px solid #dbeafe;">
+                                    <span aria-hidden="true">👥</span> تأخير وغياب المدربين والإداريين (<?php echo count($staffAttendanceAlerts); ?>)
                                 </div>
                                 <?php foreach ($staffAttendanceAlerts as $a): ?>
+                                    <?php
+                                        $statusBadgeBg = $a["status_class"] === "danger" ? "#fef2f2" : "#fffbeb";
+                                        $statusBadgeColor = $a["status_class"] === "danger" ? "#b91c1c" : "#92400e";
+                                    ?>
                                     <div style="padding:10px 14px; border-bottom:1px solid #f1f5f9;">
                                         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;">
                                             <div style="font-weight:800; color:#0f172a;"><?php echo htmlspecialchars($a["staff_label"] . " / " . $a["name"], ENT_QUOTES, 'UTF-8'); ?></div>
-                                            <span style="display:inline-flex; align-items:center; justify-content:center; min-width:64px; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:800; background:<?php echo $a["status_class"] === "danger" ? "#fef2f2" : "#fffbeb"; ?>; color:<?php echo $a["status_class"] === "danger" ? "#b91c1c" : "#92400e"; ?>;">
+                                            <span style="display:inline-flex; align-items:center; justify-content:center; min-width:64px; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:800; background:<?php echo $statusBadgeBg; ?>; color:<?php echo $statusBadgeColor; ?>;">
                                                 <?php echo htmlspecialchars($a["status_badge"], ENT_QUOTES, 'UTF-8'); ?>
                                             </span>
                                         </div>
