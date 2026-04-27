@@ -364,18 +364,19 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
     gap:12px; min-height:var(--pp-topbar-height); position:sticky; top:0; z-index:200;
     box-shadow:0 2px 12px rgba(0,0,0,0.07);
 }
-.pp-topbar-l { display:flex; align-items:center; gap:10px; }
+.pp-topbar-l { display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 auto; }
 .pp-burger {
     background:transparent; border:1px solid var(--border); border-radius:10px;
     padding:8px 12px; font-size:1.1rem; cursor:pointer; color:var(--text); font-weight:800;
 }
 .pp-burger:hover { border-color:var(--primary); color:var(--primary); }
-.pp-brand { display:flex; align-items:center; gap:8px; }
+.pp-brand { display:flex; align-items:center; gap:8px; min-width:0; flex:1 1 auto; }
 .pp-brand img { width:38px; height:38px; object-fit:contain; border-radius:8px; background:#fff; padding:2px; }
+.pp-brand-copy { min-width:0; }
 .pp-brand-name { font-size:1rem; font-weight:800; color:var(--text); }
 .pp-brand-badge { display:inline-block; font-size:.68rem; font-weight:800; color:#fff;
     background:linear-gradient(135deg,#16a34a,#2f5bea); border-radius:999px; padding:2px 9px; margin-top:2px; }
-.pp-topbar-r { display:flex; align-items:center; gap:10px; }
+.pp-topbar-r { display:flex; align-items:center; gap:10px; flex-shrink:0; }
 .pp-alert-link {
     position:relative; display:inline-flex; align-items:center; justify-content:center;
     width:42px; height:42px; border-radius:12px; text-decoration:none; color:var(--text);
@@ -629,7 +630,16 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
 }
 @media (max-width: 600px) {
     .pp-topbar { padding:0 12px; }
-    .pp-brand-name { font-size:.9rem; }
+    .pp-topbar-l { gap:8px; }
+    .pp-topbar-r { gap:6px; }
+    .pp-burger { padding:8px 10px; }
+    .pp-brand img { width:32px; height:32px; }
+    .pp-brand-name {
+        font-size:.85rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    }
+    .pp-brand-badge { display:none; }
+    .pp-alert-link { width:38px; height:38px; border-radius:10px; }
+    .pp-logout { padding:7px 10px; font-size:.76rem; white-space:nowrap; }
     .pp-user { display:none; }
     .pp-section { padding:16px; }
 }
@@ -642,7 +652,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
             <button class="pp-burger" id="ppBurger" type="button" aria-label="القائمة" aria-controls="ppSidebar">☰</button>
             <div class="pp-brand">
                 <img src="<?php echo pportEsc($siteLogo); ?>" alt="logo">
-                <div>
+                <div class="pp-brand-copy">
                     <div class="pp-brand-name"><?php echo pportEsc($siteName); ?></div>
                     <span class="pp-brand-badge">⚽ بوابة اللاعب</span>
                 </div>
