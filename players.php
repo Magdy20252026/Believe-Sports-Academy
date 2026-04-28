@@ -4,10 +4,12 @@ startSecureSession();
 require_once 'config.php';
 require_once 'navigation.php';
 require_once 'players_support.php';
+require_once 'game_levels_support.php';
 
 requireAuthenticatedUser();
 requireMenuAccess('players');
 ensurePlayersTables($pdo);
+ensureGameLevelsTable($pdo);
 
 if (!isset($_SESSION['players_csrf_token'])) {
     $_SESSION['players_csrf_token'] = bin2hex(random_bytes(32));
@@ -188,6 +190,21 @@ foreach ($groups as $group) {
     $group['training_day_keys_list'] = getPlayerTrainingDayKeys($group['training_day_keys'] ?? '');
     $group['training_time_label'] = formatTrainingTimeDisplay($group['training_time'] ?? '');
     $groupMap[(int)$group['id']] = $group;
+}
+
+$gameLevelOptions = fetchGameLevels($pdo, $currentGameId);
+$existingPlayerLevelsStmt = $pdo->prepare(
+    "SELECT DISTINCT player_level
+     FROM players
+     WHERE game_id = ? AND player_level <> ''
+     ORDER BY player_level ASC"
+);
+$existingPlayerLevelsStmt->execute([$currentGameId]);
+foreach ($existingPlayerLevelsStmt->fetchAll(PDO::FETCH_COLUMN) as $existingPlayerLevel) {
+    $existingPlayerLevel = trim((string)$existingPlayerLevel);
+    if ($existingPlayerLevel !== '' && !in_array($existingPlayerLevel, $gameLevelOptions, true)) {
+        $gameLevelOptions[] = $existingPlayerLevel;
+    }
 }
 
 $groupLevels = [];
@@ -475,9 +492,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
             } elseif (!isset($groupLevels[$formData['selected_group_level']])) {
                 $error = 'مستوى مجموعة اللاعب غير متاح.';
             } elseif ($formData['player_level'] === '') {
-                $error = 'مستوى اللاعب مطلوب.';
+                $error = 'مستوى اللعبة مطلوب.';
             } elseif (strlen($formData['player_level']) > PLAYER_LEVEL_MAX_LENGTH) {
-                $error = 'مستوى اللاعب طويل جدًا.';
+                $error = 'مستوى اللعبة طويل جدًا.';
+            } elseif (count($gameLevelOptions) > 0 && !in_array($formData['player_level'], $gameLevelOptions, true)) {
+                $error = 'مستوى اللعبة غير متاح.';
             } elseif ($formData['receipt_number'] === '') {
                 $error = 'رقم الإيصال مطلوب.';
             } elseif (strlen($formData['receipt_number']) > 100) {
@@ -1424,8 +1443,21 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
                         <input type="date" name="subscription_end_date" id="subscription_end_date" value="<?php echo htmlspecialchars($formData['subscription_end_date'], ENT_QUOTES, 'UTF-8'); ?>" required>
                     </div>
                     <div class="form-group">
-                        <label for="player_level">مستوى اللاعب</label>
-                        <input type="text" name="player_level" id="player_level" value="<?php echo htmlspecialchars($formData['player_level'], ENT_QUOTES, 'UTF-8'); ?>" maxlength="<?php echo PLAYER_LEVEL_MAX_LENGTH; ?>" required>
+                        <label for="player_level">مستوى اللعبة</label>
+                        <?php if (count($gameLevelOptions) > 0): ?>
+                            <div class="select-shell">
+                                <select name="player_level" id="player_level" required>
+                                    <option value="">اختر مستوى اللعبة</option>
+                                    <?php foreach ($gameLevelOptions as $gameLevelOption): ?>
+                                        <option value="<?php echo htmlspecialchars($gameLevelOption, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData['player_level'] === $gameLevelOption ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($gameLevelOption, ENT_QUOTES, 'UTF-8'); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        <?php else: ?>
+                            <input type="text" name="player_level" id="player_level" value="<?php echo htmlspecialchars($formData['player_level'], ENT_QUOTES, 'UTF-8'); ?>" maxlength="<?php echo PLAYER_LEVEL_MAX_LENGTH; ?>" required>
+                        <?php endif; ?>
                     </div>
                     <div class="form-group">
                         <label for="receipt_number">رقم الإيصال</label>
