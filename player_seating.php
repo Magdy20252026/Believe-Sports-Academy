@@ -139,10 +139,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $playerId = (int)($_POST["player_id"] ?? 0);
             $playerLevel = trim((string)($_POST["player_level"] ?? ""));
 
-            if ($playerId <= 0) {
-                $error = "اللاعب غير صالح.";
-            } elseif (count($allowedPlayerLevels) === 0) {
+            if (count($allowedPlayerLevels) === 0) {
                 $error = "سجّل مستويات اللعبة أولًا من صفحة الألعاب.";
+            } elseif ($playerId <= 0) {
+                $error = "اللاعب غير صالح.";
             } elseif ($playerLevel === "") {
                 $error = "مستوى اللاعب مطلوب.";
             } elseif (strlen($playerLevel) > PLAYER_LEVEL_MAX_LENGTH) {
