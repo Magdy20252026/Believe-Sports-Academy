@@ -187,7 +187,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             academy_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             training_day_keys VARCHAR(255) NOT NULL DEFAULT '',
             training_time TIME NULL DEFAULT NULL,
-            password VARCHAR(255) NOT NULL DEFAULT '123456',
+            password VARCHAR(255) NOT NULL DEFAULT '',
             created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -789,6 +789,7 @@ function seedDefaultApplicationData(PDO $pdo)
 
     $passwordHash = password_hash("123456", PASSWORD_DEFAULT);
     if ($passwordHash === false) {
+        error_log("seedDefaultApplicationData: failed to hash default admin password.");
         return;
     }
 
