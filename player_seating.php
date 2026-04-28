@@ -4,6 +4,7 @@ startSecureSession();
 require_once "config.php";
 require_once "navigation.php";
 require_once "players_support.php";
+require_once "game_levels_support.php";
 
 requireAuthenticatedUser();
 requireMenuAccess("player-seating");
@@ -93,6 +94,7 @@ function ensurePlayerSeatingGroupsTable(PDO $pdo)
 
 ensurePlayersTables($pdo);
 ensurePlayerSeatingGroupsTable($pdo);
+ensureGameLevelsTable($pdo);
 
 if (!isset($_SESSION["player_seating_csrf_token"])) {
     $_SESSION["player_seating_csrf_token"] = bin2hex(random_bytes(32));
@@ -122,6 +124,8 @@ if ($currentGameId <= 0 || !isset($allGameMap[$currentGameId])) {
     exit;
 }
 
+$allowedPlayerLevels = fetchGameLevels($pdo, $currentGameId);
+
 // ===================== معالجة تحديث مستوى اللاعب =====================
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $csrfToken = (string)($_POST["csrf_token"] ?? "");
@@ -132,55 +136,61 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $action = (string)($_POST["action"] ?? "");
 
         if ($action === "update_player_level") {
-            $playerId = (int)($_POST["player_id"] ?? 0);
-            $playerLevel = trim((string)($_POST["player_level"] ?? ""));
-
-            if ($playerId <= 0) {
-                $error = "اللاعب غير صالح.";
-            } elseif ($playerLevel === "") {
-                $error = "مستوى اللاعب مطلوب.";
-            } elseif (strlen($playerLevel) > PLAYER_LEVEL_MAX_LENGTH) {
-                $error = "مستوى اللاعب طويل جدًا.";
+            if (count($allowedPlayerLevels) === 0) {
+                $error = "سجّل مستويات اللعبة أولًا من صفحة الألعاب.";
             } else {
-                $playerStmt = $pdo->prepare(
-                    "SELECT id, player_level
-                     FROM players
-                     WHERE id = ? AND game_id = ?
-                     LIMIT 1"
-                );
-                $playerStmt->execute([$playerId, $currentGameId]);
-                $playerRow = $playerStmt->fetch();
-                if (!$playerRow) {
-                    $error = "اللاعب غير متاح.";
-                } else {
-                    try {
-                        $pdo->beginTransaction();
-                        syncPlayerSubscriptionHistoryFromPlayerId($pdo, $playerId, $currentGameId, "pre_save");
-                        $updateStmt = $pdo->prepare(
-                            "UPDATE players
-                             SET player_level = ?
-                             WHERE id = ? AND game_id = ?"
-                        );
-                        $updateStmt->execute([$playerLevel, $playerId, $currentGameId]);
-                        notifyPlayerLevelChanged(
-                            $pdo,
-                            $currentGameId,
-                            $playerId,
-                            (string)($playerRow["player_level"] ?? ""),
-                            $playerLevel
-                        );
-                        syncPlayerSubscriptionHistoryFromPlayerId($pdo, $playerId, $currentGameId, "save");
-                        auditTrack($pdo, "update", "players", $playerId, "تجلوس اللاعبين", "تحديث مستوى لاعب رقم " . $playerId . " إلى: " . (string)$playerLevel);
-                        $pdo->commit();
+                $playerId = (int)($_POST["player_id"] ?? 0);
+                $playerLevel = trim((string)($_POST["player_level"] ?? ""));
 
-                        $_SESSION["player_seating_success"] = "تم تحديث مستوى اللاعب.";
-                        header("Location: " . PLAYER_SEATING_PAGE_HREF);
-                        exit;
-                    } catch (Throwable $throwable) {
-                        if ($pdo->inTransaction()) {
-                            $pdo->rollBack();
+                if ($playerId <= 0) {
+                    $error = "اللاعب غير صالح.";
+                } elseif ($playerLevel === "") {
+                    $error = "مستوى اللاعب مطلوب.";
+                } elseif (strlen($playerLevel) > PLAYER_LEVEL_MAX_LENGTH) {
+                    $error = "مستوى اللاعب طويل جدًا.";
+                } elseif (!in_array($playerLevel, $allowedPlayerLevels, true)) {
+                    $error = "مستوى اللاعب غير متاح.";
+                } else {
+                    $playerStmt = $pdo->prepare(
+                        "SELECT id, player_level
+                         FROM players
+                         WHERE id = ? AND game_id = ?
+                         LIMIT 1"
+                    );
+                    $playerStmt->execute([$playerId, $currentGameId]);
+                    $playerRow = $playerStmt->fetch();
+                    if (!$playerRow) {
+                        $error = "اللاعب غير متاح.";
+                    } else {
+                        try {
+                            $pdo->beginTransaction();
+                            syncPlayerSubscriptionHistoryFromPlayerId($pdo, $playerId, $currentGameId, "pre_save");
+                            $updateStmt = $pdo->prepare(
+                                "UPDATE players
+                                 SET player_level = ?
+                                 WHERE id = ? AND game_id = ?"
+                            );
+                            $updateStmt->execute([$playerLevel, $playerId, $currentGameId]);
+                            notifyPlayerLevelChanged(
+                                $pdo,
+                                $currentGameId,
+                                $playerId,
+                                (string)($playerRow["player_level"] ?? ""),
+                                $playerLevel
+                            );
+                            syncPlayerSubscriptionHistoryFromPlayerId($pdo, $playerId, $currentGameId, "save");
+                            auditTrack($pdo, "update", "players", $playerId, "تجلوس اللاعبين", "تحديث مستوى لاعب رقم " . $playerId . " إلى: " . (string)$playerLevel);
+                            $pdo->commit();
+
+                            $_SESSION["player_seating_success"] = "تم تحديث مستوى اللاعب.";
+                            header("Location: " . PLAYER_SEATING_PAGE_HREF);
+                            exit;
+                        } catch (Throwable $throwable) {
+                            if ($pdo->inTransaction()) {
+                                $pdo->rollBack();
+                            }
+                            $error = "تعذر تحديث مستوى اللاعب.";
                         }
-                        $error = "تعذر تحديث مستوى اللاعب.";
                     }
                 }
             }
@@ -513,14 +523,22 @@ foreach ($groupPlayersStmt->fetchAll() as $playerRow) {
                                                                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION["player_seating_csrf_token"], ENT_QUOTES, "UTF-8"); ?>">
                                                                         <input type="hidden" name="action" value="update_player_level">
                                                                         <input type="hidden" name="player_id" value="<?php echo (int)$player["id"]; ?>">
-                                                                        <input
-                                                                            type="text"
+                                                                        <select
                                                                             name="player_level"
-                                                                            value="<?php echo htmlspecialchars((string)$player["player_level"], ENT_QUOTES, "UTF-8"); ?>"
-                                                                            maxlength="<?php echo PLAYER_LEVEL_MAX_LENGTH; ?>"
                                                                             class="seating-level-input"
                                                                             required
+                                                                            <?php echo count($allowedPlayerLevels) === 0 ? 'disabled' : ''; ?>
                                                                         >
+                                                                            <option value="">اختر مستوى اللعبة</option>
+                                                                            <?php foreach ($allowedPlayerLevels as $allowedPlayerLevel): ?>
+                                                                                <option
+                                                                                    value="<?php echo htmlspecialchars($allowedPlayerLevel, ENT_QUOTES, "UTF-8"); ?>"
+                                                                                    <?php echo (string)$player["player_level"] === $allowedPlayerLevel ? 'selected' : ''; ?>
+                                                                                >
+                                                                                    <?php echo htmlspecialchars($allowedPlayerLevel, ENT_QUOTES, "UTF-8"); ?>
+                                                                                </option>
+                                                                            <?php endforeach; ?>
+                                                                        </select>
                                                                         <button type="submit" class="btn btn-warning">حفظ</button>
                                                                     </form>
                                                                 </td>

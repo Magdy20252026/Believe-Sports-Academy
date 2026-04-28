@@ -4,6 +4,11 @@ const GAME_LEVEL_MAX_LENGTH = 150;
 
 function ensureGameLevelsTable(PDO $pdo)
 {
+    static $alreadyEnsured = false;
+    if ($alreadyEnsured) {
+        return;
+    }
+
     $pdo->exec(
         "CREATE TABLE IF NOT EXISTS game_levels (
             id INT(11) NOT NULL AUTO_INCREMENT,
@@ -45,6 +50,8 @@ function ensureGameLevelsTable(PDO $pdo)
             error_log('Failed to ensure game_levels foreign key: ' . $throwable->getMessage());
         }
     }
+
+    $alreadyEnsured = true;
 }
 
 function normalizeGameLevelsInput($value)
