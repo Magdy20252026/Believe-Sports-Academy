@@ -15,6 +15,7 @@ function ensureStoreCategoriesTable(PDO $pdo)
             game_id INT(11) NOT NULL,
             category_name VARCHAR(150) NOT NULL,
             pricing_type VARCHAR(30) NOT NULL DEFAULT 'price_only',
+            has_sizes TINYINT(1) NOT NULL DEFAULT 0,
             quantity INT(11) NULL DEFAULT NULL,
             price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
@@ -27,7 +28,8 @@ function ensureStoreCategoriesTable(PDO $pdo)
 
     $requiredColumns = [
         "pricing_type" => "ALTER TABLE store_categories ADD COLUMN pricing_type VARCHAR(30) NOT NULL DEFAULT 'price_only' AFTER category_name",
-        "quantity" => "ALTER TABLE store_categories ADD COLUMN quantity INT(11) NULL DEFAULT NULL AFTER pricing_type",
+        "has_sizes" => "ALTER TABLE store_categories ADD COLUMN has_sizes TINYINT(1) NOT NULL DEFAULT 0 AFTER pricing_type",
+        "quantity" => "ALTER TABLE store_categories ADD COLUMN quantity INT(11) NULL DEFAULT NULL AFTER has_sizes",
         "price" => "ALTER TABLE store_categories ADD COLUMN price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER quantity",
         "updated_at" => "ALTER TABLE store_categories ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at",
     ];
@@ -48,6 +50,37 @@ function ensureStoreCategoriesTable(PDO $pdo)
                 $pdo->exec($sql);
             } catch (Throwable $throwable) {
                 error_log("Failed to ensure store_categories.{$columnName}: " . $throwable->getMessage());
+            }
+        }
+    }
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS store_category_sizes (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            category_id INT(11) NOT NULL,
+            size_name VARCHAR(100) NOT NULL,
+            quantity INT(11) NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY unique_store_category_size_name (category_id, size_name),
+            KEY idx_store_category_sizes_category (category_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+
+    $sizeRequiredColumns = [
+        "size_name" => "ALTER TABLE store_category_sizes ADD COLUMN size_name VARCHAR(100) NOT NULL AFTER category_id",
+        "quantity" => "ALTER TABLE store_category_sizes ADD COLUMN quantity INT(11) NOT NULL DEFAULT 0 AFTER size_name",
+        "created_at" => "ALTER TABLE store_category_sizes ADD COLUMN created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP AFTER quantity",
+        "updated_at" => "ALTER TABLE store_category_sizes ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at",
+    ];
+    foreach ($sizeRequiredColumns as $columnName => $sql) {
+        $existingColumnsStmt->execute(["store_category_sizes", $columnName]);
+        if (!$existingColumnsStmt->fetchColumn()) {
+            try {
+                $pdo->exec($sql);
+            } catch (Throwable $throwable) {
+                error_log("Failed to ensure store_category_sizes.{$columnName}: " . $throwable->getMessage());
             }
         }
     }
@@ -91,6 +124,7 @@ function ensureSalesInvoicesTables(PDO $pdo)
             invoice_id INT(11) NOT NULL,
             category_id INT(11) NOT NULL,
             category_name VARCHAR(150) NOT NULL,
+            size_name VARCHAR(100) NOT NULL DEFAULT '',
             quantity INT(11) NOT NULL,
             unit_price DECIMAL(12,2) NOT NULL DEFAULT 0.00,
             line_total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
@@ -104,7 +138,8 @@ function ensureSalesInvoicesTables(PDO $pdo)
     $itemColumns = [
         "category_id" => "ALTER TABLE sales_invoice_items ADD COLUMN category_id INT(11) NOT NULL AFTER invoice_id",
         "category_name" => "ALTER TABLE sales_invoice_items ADD COLUMN category_name VARCHAR(150) NOT NULL AFTER category_id",
-        "quantity" => "ALTER TABLE sales_invoice_items ADD COLUMN quantity INT(11) NOT NULL AFTER category_name",
+        "size_name" => "ALTER TABLE sales_invoice_items ADD COLUMN size_name VARCHAR(100) NOT NULL DEFAULT '' AFTER category_name",
+        "quantity" => "ALTER TABLE sales_invoice_items ADD COLUMN quantity INT(11) NOT NULL AFTER size_name",
         "unit_price" => "ALTER TABLE sales_invoice_items ADD COLUMN unit_price DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER quantity",
         "line_total" => "ALTER TABLE sales_invoice_items ADD COLUMN line_total DECIMAL(12,2) NOT NULL DEFAULT 0.00 AFTER unit_price",
     ];
@@ -208,6 +243,20 @@ function ensureSalesInvoicesTables(PDO $pdo)
             error_log("Failed to add fk_sales_invoice_items_invoice: " . $throwable->getMessage());
         }
     }
+
+    $constraintsStmt->execute([$databaseName, "store_category_sizes"]);
+    $sizeConstraints = array_column($constraintsStmt->fetchAll(), "CONSTRAINT_NAME");
+    if (!in_array("fk_store_category_sizes_category", $sizeConstraints, true)) {
+        try {
+            $pdo->exec(
+                "ALTER TABLE store_category_sizes
+                 ADD CONSTRAINT fk_store_category_sizes_category
+                 FOREIGN KEY (category_id) REFERENCES store_categories (id) ON DELETE CASCADE"
+            );
+        } catch (Throwable $throwable) {
+            error_log("Failed to add fk_store_category_sizes_category: " . $throwable->getMessage());
+        }
+    }
 }
 
 function normalizeSalesNumericInput($value)
@@ -309,39 +358,63 @@ function formatSalesDateTime($value)
 function fetchSalesCategories(PDO $pdo, $gameId)
 {
     $stmt = $pdo->prepare(
-        "SELECT id, category_name, pricing_type, quantity, price
+        "SELECT id, category_name, pricing_type, has_sizes, quantity, price
          FROM store_categories
          WHERE game_id = ?
          ORDER BY category_name ASC"
     );
     $stmt->execute([(int)$gameId]);
 
+    $sizesStmt = $pdo->prepare(
+        "SELECT scs.category_id, scs.size_name, scs.quantity
+         FROM store_category_sizes scs
+         INNER JOIN store_categories sc ON sc.id = scs.category_id
+         WHERE sc.game_id = ?
+         ORDER BY scs.size_name ASC, scs.id ASC"
+    );
+    $sizesStmt->execute([(int)$gameId]);
+    $sizesByCategoryId = [];
+    foreach ($sizesStmt->fetchAll() as $sizeRow) {
+        $categoryId = (int)$sizeRow["category_id"];
+        if (!isset($sizesByCategoryId[$categoryId])) {
+            $sizesByCategoryId[$categoryId] = [];
+        }
+        $sizesByCategoryId[$categoryId][] = [
+            "size_name" => (string)$sizeRow["size_name"],
+            "quantity" => (int)$sizeRow["quantity"],
+        ];
+    }
+
     $categories = [];
     foreach ($stmt->fetchAll() as $category) {
         $categoryId = (int)$category["id"];
+        $sizes = $sizesByCategoryId[$categoryId] ?? [];
         $categories[$categoryId] = [
             "id" => $categoryId,
             "category_name" => (string)$category["category_name"],
             "pricing_type" => (string)($category["pricing_type"] ?? "price_only"),
+            "has_sizes" => (int)($category["has_sizes"] ?? 0) === 1,
             "quantity" => $category["quantity"] === null ? null : (int)$category["quantity"],
             "price" => number_format((float)$category["price"], 2, ".", ""),
+            "sizes" => $sizes,
         ];
     }
 
     return $categories;
 }
 
-function collectSalesInvoiceItems(array $categoryIds, array $quantities, array $categoriesMap)
+function collectSalesInvoiceItems(array $categoryIds, array $sizeNames, array $quantities, array $categoriesMap)
 {
     $items = [];
-    $usedCategoryIds = [];
-    $rowCount = max(count($categoryIds), count($quantities));
+    $usedItemKeys = [];
+    $rowCount = max(count($categoryIds), count($sizeNames), count($quantities));
 
     for ($index = 0; $index < $rowCount; $index++) {
         $rawCategoryId = trim((string)($categoryIds[$index] ?? ""));
+        $rawSizeName = trim((string)($sizeNames[$index] ?? ""));
         $rawQuantity = trim((string)($quantities[$index] ?? ""));
 
-        if ($rawCategoryId === "" && $rawQuantity === "") {
+        if ($rawCategoryId === "" && $rawSizeName === "" && $rawQuantity === "") {
             continue;
         }
 
@@ -355,12 +428,27 @@ function collectSalesInvoiceItems(array $categoryIds, array $quantities, array $
             return ["items" => [], "error" => "الكمية يجب أن تكون رقمًا صحيحًا أكبر من صفر."];
         }
 
-        if (in_array($categoryId, $usedCategoryIds, true)) {
-            return ["items" => [], "error" => "لا يمكن تكرار نفس الصنف داخل الفاتورة الواحدة."];
+        $category = $categoriesMap[$categoryId];
+        $selectedSizeName = "";
+        if (($category["has_sizes"] ?? false) === true) {
+            if ($rawSizeName === "") {
+                return ["items" => [], "error" => "اختر المقاس المطلوب لكل صنف له مقاسات."];
+            }
+
+            $matchingSizeNames = array_column($category["sizes"] ?? [], "size_name");
+            if (!in_array($rawSizeName, $matchingSizeNames, true)) {
+                return ["items" => [], "error" => "المقاس المحدد غير متاح للصنف المختار."];
+            }
+
+            $selectedSizeName = $rawSizeName;
         }
 
-        $usedCategoryIds[] = $categoryId;
-        $category = $categoriesMap[$categoryId];
+        $itemUniqueKey = $categoryId . "|" . $selectedSizeName;
+        if (in_array($itemUniqueKey, $usedItemKeys, true)) {
+            return ["items" => [], "error" => "لا يمكن تكرار نفس الصنف والمقاس داخل الفاتورة الواحدة."];
+        }
+
+        $usedItemKeys[] = $itemUniqueKey;
         $quantity = (int)$quantityValue;
         $unitPrice = (float)$category["price"];
         $lineTotal = round($quantity * $unitPrice, 2);
@@ -368,7 +456,9 @@ function collectSalesInvoiceItems(array $categoryIds, array $quantities, array $
         $items[] = [
             "category_id" => $categoryId,
             "category_name" => (string)$category["category_name"],
+            "size_name" => $selectedSizeName,
             "pricing_type" => (string)$category["pricing_type"],
+            "has_sizes" => ($category["has_sizes"] ?? false) === true,
             "quantity" => $quantity,
             "unit_price" => number_format($unitPrice, 2, ".", ""),
             "line_total" => number_format($lineTotal, 2, ".", ""),
@@ -407,7 +497,7 @@ function fetchSalesInvoiceWithItems(PDO $pdo, $invoiceId, $gameId)
     }
 
     $itemsStmt = $pdo->prepare(
-        "SELECT id, invoice_id, category_id, category_name, quantity, unit_price, line_total
+        "SELECT id, invoice_id, category_id, category_name, size_name, quantity, unit_price, line_total
          FROM sales_invoice_items
          WHERE invoice_id = ?
          ORDER BY id ASC"
@@ -431,7 +521,7 @@ function lockSalesCategories(PDO $pdo, $gameId, array $categoryIds)
     }
 
     $sql =
-        "SELECT id, category_name, pricing_type, quantity, price
+        "SELECT id, category_name, pricing_type, has_sizes, quantity, price
          FROM store_categories
          WHERE game_id = ? AND id IN (" . buildSalesLockPlaceholders($categoryIds) . ")
          FOR UPDATE";
@@ -445,7 +535,33 @@ function lockSalesCategories(PDO $pdo, $gameId, array $categoryIds)
             "id" => (int)$category["id"],
             "category_name" => (string)$category["category_name"],
             "pricing_type" => (string)($category["pricing_type"] ?? "price_only"),
+            "has_sizes" => (int)($category["has_sizes"] ?? 0) === 1,
             "quantity" => $category["quantity"] === null ? null : (int)$category["quantity"],
+            "sizes" => [],
+        ];
+    }
+
+    if (count($lockedCategories) === 0) {
+        return $lockedCategories;
+    }
+
+    $sizesStmt = $pdo->prepare(
+        "SELECT scs.category_id, scs.size_name, scs.quantity
+         FROM store_category_sizes scs
+         WHERE scs.category_id IN (" . buildSalesLockPlaceholders(array_keys($lockedCategories)) . ")
+         FOR UPDATE"
+    );
+    $sizesStmt->execute(array_map("intval", array_keys($lockedCategories)));
+    foreach ($sizesStmt->fetchAll() as $sizeRow) {
+        $categoryId = (int)$sizeRow["category_id"];
+        $sizeName = (string)$sizeRow["size_name"];
+        if (!isset($lockedCategories[$categoryId])) {
+            continue;
+        }
+
+        $lockedCategories[$categoryId]["sizes"][$sizeName] = [
+            "size_name" => $sizeName,
+            "quantity" => (int)$sizeRow["quantity"],
         ];
     }
 
@@ -475,7 +591,6 @@ function applySalesInventoryImpact(array &$lockedCategories, $invoiceType, array
             continue;
         }
 
-        $currentQuantity = $lockedCategories[$categoryId]["quantity"] === null ? 0 : (int)$lockedCategories[$categoryId]["quantity"];
         $itemQuantity = (int)$item["quantity"];
         $delta = 0;
 
@@ -485,6 +600,25 @@ function applySalesInventoryImpact(array &$lockedCategories, $invoiceType, array
             $delta = $reverse ? -$itemQuantity : $itemQuantity;
         }
 
+        if (($lockedCategories[$categoryId]["has_sizes"] ?? false) === true) {
+            $sizeName = trim((string)($item["size_name"] ?? ""));
+            if ($sizeName === "" || !isset($lockedCategories[$categoryId]["sizes"][$sizeName])) {
+                return "أحد المقاسات المرتبطة بالصنف \"" . $lockedCategories[$categoryId]["category_name"] . "\" غير متاح الآن.";
+            }
+
+            $currentQuantity = (int)$lockedCategories[$categoryId]["sizes"][$sizeName]["quantity"];
+            if (($currentQuantity + $delta) < 0) {
+                return "الكمية المتاحة لا تسمح بحفظ التعديل للمقاس \"" . $sizeName . "\" في الصنف \"" . $lockedCategories[$categoryId]["category_name"] . "\".";
+            }
+
+            $lockedCategories[$categoryId]["sizes"][$sizeName]["quantity"] = $currentQuantity + $delta;
+            $lockedCategories[$categoryId]["quantity"] = array_sum(array_map(function ($sizeRow) {
+                return (int)$sizeRow["quantity"];
+            }, $lockedCategories[$categoryId]["sizes"]));
+            continue;
+        }
+
+        $currentQuantity = $lockedCategories[$categoryId]["quantity"] === null ? 0 : (int)$lockedCategories[$categoryId]["quantity"];
         if (($currentQuantity + $delta) < 0) {
             return "الكمية المتاحة لا تسمح بحفظ التعديل للصنف \"" . $lockedCategories[$categoryId]["category_name"] . "\".";
         }
@@ -502,10 +636,25 @@ function persistSalesCategoryQuantities(PDO $pdo, $gameId, array $lockedCategori
          SET quantity = ?
          WHERE id = ? AND game_id = ?"
     );
+    $updateSizeStmt = $pdo->prepare(
+        "UPDATE store_category_sizes
+         SET quantity = ?
+         WHERE category_id = ? AND size_name = ?"
+    );
 
     foreach ($lockedCategories as $categoryId => $category) {
         if (($category["pricing_type"] ?? "") !== "price_with_quantity") {
             continue;
+        }
+
+        if (($category["has_sizes"] ?? false) === true) {
+            foreach (($category["sizes"] ?? []) as $sizeName => $sizeRow) {
+                $originalSizeQuantity = $originalCategories[$categoryId]["sizes"][$sizeName]["quantity"] ?? null;
+                $newSizeQuantity = (int)$sizeRow["quantity"];
+                if ($originalSizeQuantity !== $newSizeQuantity) {
+                    $updateSizeStmt->execute([$newSizeQuantity, (int)$categoryId, (string)$sizeName]);
+                }
+            }
         }
 
         $originalQuantity = $originalCategories[$categoryId]["quantity"] ?? null;
@@ -547,7 +696,7 @@ function fetchSalesInvoicesForDate(PDO $pdo, $gameId, $selectedDate, $filterType
 
     $invoiceIds = array_map("intval", array_column($invoices, "id"));
     $itemsStmt = $pdo->prepare(
-        "SELECT invoice_id, category_name, quantity, unit_price, line_total
+        "SELECT invoice_id, category_name, size_name, quantity, unit_price, line_total
          FROM sales_invoice_items
          WHERE invoice_id IN (" . buildSalesLockPlaceholders($invoiceIds) . ")
          ORDER BY id ASC"
@@ -575,6 +724,17 @@ function fetchSalesInvoicesForDate(PDO $pdo, $gameId, $selectedDate, $filterType
     unset($invoice);
 
     return $invoices;
+}
+
+function formatSalesItemName(array $item)
+{
+    $categoryName = trim((string)($item["category_name"] ?? ""));
+    $sizeName = trim((string)($item["size_name"] ?? ""));
+    if ($sizeName === "") {
+        return $categoryName;
+    }
+
+    return $categoryName . " - " . $sizeName;
 }
 
 function summarizeSalesDay(PDO $pdo, $gameId, $selectedDate)
@@ -688,6 +848,7 @@ $formData = [
     "items" => [
         [
             "category_id" => 0,
+            "size_name" => "",
             "quantity" => "1",
         ],
     ],
@@ -718,23 +879,28 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             ];
 
             $postedCategoryIds = $_POST["item_category_id"] ?? [];
+            $postedSizeNames = $_POST["item_size_name"] ?? [];
             $postedQuantities = $_POST["item_quantity"] ?? [];
             if (!is_array($postedCategoryIds)) {
                 $postedCategoryIds = [];
+            }
+            if (!is_array($postedSizeNames)) {
+                $postedSizeNames = [];
             }
             if (!is_array($postedQuantities)) {
                 $postedQuantities = [];
             }
 
-            $rowCount = max(count($postedCategoryIds), count($postedQuantities));
+            $rowCount = max(count($postedCategoryIds), count($postedSizeNames), count($postedQuantities));
             for ($index = 0; $index < $rowCount; $index++) {
                 $formData["items"][] = [
                     "category_id" => (int)($postedCategoryIds[$index] ?? 0),
+                    "size_name" => trim((string)($postedSizeNames[$index] ?? "")),
                     "quantity" => trim((string)($postedQuantities[$index] ?? "")),
                 ];
             }
             if (count($formData["items"]) === 0) {
-                $formData["items"][] = ["category_id" => 0, "quantity" => "1"];
+                $formData["items"][] = ["category_id" => 0, "size_name" => "", "quantity" => "1"];
             }
 
             if ($formData["id"] > 0 && !$isManager) {
@@ -747,7 +913,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             $collectedItems = ["items" => [], "error" => ""];
             if ($error === "") {
-                $collectedItems = collectSalesInvoiceItems($postedCategoryIds, $postedQuantities, $categoriesMap);
+                $collectedItems = collectSalesInvoiceItems($postedCategoryIds, $postedSizeNames, $postedQuantities, $categoriesMap);
                 $error = $collectedItems["error"];
             }
 
@@ -856,14 +1022,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     }
 
                     $insertItemStmt = $pdo->prepare(
-                        "INSERT INTO sales_invoice_items (invoice_id, category_id, category_name, quantity, unit_price, line_total)
-                         VALUES (?, ?, ?, ?, ?, ?)"
+                        "INSERT INTO sales_invoice_items (invoice_id, category_id, category_name, size_name, quantity, unit_price, line_total)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)"
                     );
                     foreach ($invoiceItems as $item) {
                         $insertItemStmt->execute([
                             $invoiceId,
                             (int)$item["category_id"],
                             (string)$item["category_name"],
+                            (string)$item["size_name"],
                             (int)$item["quantity"],
                             (string)$item["unit_price"],
                             (string)$item["line_total"],
@@ -978,6 +1145,7 @@ if ($isManager && $editInvoiceId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
 
             $formItems[] = [
                 "category_id" => $categoryId,
+                "size_name" => (string)($item["size_name"] ?? ""),
                 "quantity" => (string)(int)$item["quantity"],
             ];
         }
@@ -991,7 +1159,7 @@ if ($isManager && $editInvoiceId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
                 "invoice_date" => (string)$editInvoice["invoice_date"],
                 "customer_name" => (string)($editInvoice["customer_name"] ?? ""),
                 "paid_amount" => number_format((float)$editInvoice["paid_amount"], 2, ".", ""),
-                "items" => count($formItems) > 0 ? $formItems : [["category_id" => 0, "quantity" => "1"]],
+                "items" => count($formItems) > 0 ? $formItems : [["category_id" => 0, "size_name" => "", "quantity" => "1"]],
             ];
             $selectedDate = (string)$editInvoice["invoice_date"];
         }
@@ -1161,6 +1329,7 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                                         <thead>
                                             <tr>
                                                 <th>الصنف</th>
+                                                <th>المقاس</th>
                                                 <th>الرصيد</th>
                                                 <th>الكمية</th>
                                                 <th>سعر الوحدة</th>
@@ -1170,7 +1339,7 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                                         </thead>
                                         <tbody id="salesItemsBody">
                                             <?php foreach ($formData["items"] as $itemIndex => $itemRow): ?>
-                                                <tr class="sales-item-row">
+                                                <tr class="sales-item-row" data-selected-size-name="<?php echo htmlspecialchars((string)($itemRow["size_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>">
                                                     <td data-label="الصنف">
                                                         <select name="item_category_id[]" class="sales-item-select" required>
                                                             <option value="">اختر الصنف</option>
@@ -1180,11 +1349,18 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                                                                     data-price="<?php echo htmlspecialchars((string)$category["price"], ENT_QUOTES, "UTF-8"); ?>"
                                                                     data-stock-managed="<?php echo ($category["pricing_type"] ?? "") === "price_with_quantity" ? "1" : "0"; ?>"
                                                                     data-stock="<?php echo $category["quantity"] === null ? "" : (int)$category["quantity"]; ?>"
+                                                                    data-has-sizes="<?php echo ($category["has_sizes"] ?? false) ? "1" : "0"; ?>"
+                                                                    data-sizes="<?php echo htmlspecialchars(json_encode($category["sizes"] ?? [], JSON_UNESCAPED_UNICODE), ENT_QUOTES, "UTF-8"); ?>"
                                                                     <?php echo (int)$itemRow["category_id"] === (int)$category["id"] ? "selected" : ""; ?>
                                                                 >
                                                                     <?php echo htmlspecialchars((string)$category["category_name"], ENT_QUOTES, "UTF-8"); ?>
                                                                 </option>
                                                             <?php endforeach; ?>
+                                                        </select>
+                                                    </td>
+                                                    <td data-label="المقاس">
+                                                        <select name="item_size_name[]" class="sales-item-size-select">
+                                                            <option value="">بدون مقاس</option>
                                                         </select>
                                                     </td>
                                                     <td data-label="الرصيد">
@@ -1271,14 +1447,14 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                                             <?php echo htmlspecialchars($invoice["customer_name"] ?? "", ENT_QUOTES, "UTF-8"); ?>
                                         </td>
                                         <td data-label="الأصناف">
-                                            <div class="sales-items-preview">
-                                                <?php foreach ($invoice["items"] as $item): ?>
-                                                    <div class="sales-preview-item">
-                                                        <span><?php echo htmlspecialchars((string)$item["category_name"], ENT_QUOTES, "UTF-8"); ?></span>
-                                                        <strong><?php echo (int)$item["quantity"]; ?> × <?php echo htmlspecialchars(formatSalesCurrency($item["unit_price"]), ENT_QUOTES, "UTF-8"); ?></strong>
-                                                    </div>
-                                                <?php endforeach; ?>
-                                            </div>
+                                                <div class="sales-items-preview">
+                                                    <?php foreach ($invoice["items"] as $item): ?>
+                                                        <div class="sales-preview-item">
+                                                            <span><?php echo htmlspecialchars(formatSalesItemName($item), ENT_QUOTES, "UTF-8"); ?></span>
+                                                            <strong><?php echo (int)$item["quantity"]; ?> × <?php echo htmlspecialchars(formatSalesCurrency($item["unit_price"]), ENT_QUOTES, "UTF-8"); ?></strong>
+                                                        </div>
+                                                    <?php endforeach; ?>
+                                                </div>
                                         </td>
                                         <td data-label="الإجمالي">
                                             <span class="sales-price-pill"><?php echo htmlspecialchars(formatSalesCurrency($invoice["total_amount"]), ENT_QUOTES, "UTF-8"); ?></span>
@@ -1328,7 +1504,7 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
 
 <?php if (count($categories) > 0): ?>
 <template id="salesItemRowTemplate">
-    <tr class="sales-item-row">
+    <tr class="sales-item-row" data-selected-size-name="">
         <td data-label="الصنف">
             <select name="item_category_id[]" class="sales-item-select" required>
                 <option value="">اختر الصنف</option>
@@ -1338,10 +1514,17 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                         data-price="<?php echo htmlspecialchars((string)$category["price"], ENT_QUOTES, "UTF-8"); ?>"
                         data-stock-managed="<?php echo ($category["pricing_type"] ?? "") === "price_with_quantity" ? "1" : "0"; ?>"
                         data-stock="<?php echo $category["quantity"] === null ? "" : (int)$category["quantity"]; ?>"
+                        data-has-sizes="<?php echo ($category["has_sizes"] ?? false) ? "1" : "0"; ?>"
+                        data-sizes="<?php echo htmlspecialchars(json_encode($category["sizes"] ?? [], JSON_UNESCAPED_UNICODE), ENT_QUOTES, "UTF-8"); ?>"
                     >
                         <?php echo htmlspecialchars((string)$category["category_name"], ENT_QUOTES, "UTF-8"); ?>
                     </option>
                 <?php endforeach; ?>
+            </select>
+        </td>
+        <td data-label="المقاس">
+            <select name="item_size_name[]" class="sales-item-size-select">
+                <option value="">بدون مقاس</option>
             </select>
         </td>
         <td data-label="الرصيد">
@@ -1391,8 +1574,66 @@ document.addEventListener("DOMContentLoaded", function () {
             : null;
     };
 
+    const readSizes = function (selectedOption) {
+        if (!selectedOption || !selectedOption.dataset || !selectedOption.dataset.sizes) {
+            return [];
+        }
+
+        try {
+            const parsedSizes = JSON.parse(selectedOption.dataset.sizes);
+            return Array.isArray(parsedSizes) ? parsedSizes : [];
+        } catch (error) {
+            return [];
+        }
+    };
+
+    const populateSizeSelect = function (rowElement) {
+        const selectElement = rowElement.querySelector(".sales-item-select");
+        const sizeSelectElement = rowElement.querySelector(".sales-item-size-select");
+        const selectedOption = getSelectedOption(selectElement);
+        const selectedSizeName = rowElement.getAttribute("data-selected-size-name") || "";
+
+        if (!sizeSelectElement) {
+            return;
+        }
+
+        sizeSelectElement.innerHTML = "";
+
+        if (!selectedOption || !selectedOption.value || selectedOption.dataset.hasSizes !== "1") {
+            const emptyOption = document.createElement("option");
+            emptyOption.value = "";
+            emptyOption.textContent = "بدون مقاس";
+            sizeSelectElement.appendChild(emptyOption);
+            sizeSelectElement.required = false;
+            sizeSelectElement.disabled = true;
+            sizeSelectElement.value = "";
+            return;
+        }
+
+        const defaultOption = document.createElement("option");
+        defaultOption.value = "";
+        defaultOption.textContent = "اختر المقاس";
+        sizeSelectElement.appendChild(defaultOption);
+
+        readSizes(selectedOption).forEach(function (sizeRow) {
+            const sizeOption = document.createElement("option");
+            sizeOption.value = sizeRow.size_name || "";
+            sizeOption.textContent = (sizeRow.size_name || "") + " — الرصيد: " + String(sizeRow.quantity ?? 0);
+            sizeOption.dataset.stock = String(sizeRow.quantity ?? 0);
+            sizeSelectElement.appendChild(sizeOption);
+        });
+
+        sizeSelectElement.required = true;
+        sizeSelectElement.disabled = false;
+        sizeSelectElement.value = selectedSizeName;
+        if (sizeSelectElement.value !== selectedSizeName) {
+            sizeSelectElement.value = "";
+        }
+    };
+
     const updateRow = function (rowElement) {
         const selectElement = rowElement.querySelector(".sales-item-select");
+        const sizeSelectElement = rowElement.querySelector(".sales-item-size-select");
         const quantityInput = rowElement.querySelector(".sales-item-quantity");
         const unitPriceElement = rowElement.querySelector(".sales-unit-price");
         const lineTotalElement = rowElement.querySelector(".sales-line-total");
@@ -1400,7 +1641,10 @@ document.addEventListener("DOMContentLoaded", function () {
         const selectedOption = getSelectedOption(selectElement);
         const unitPrice = selectedOption ? parseFloat(selectedOption.dataset.price || "0") : 0;
         const isStockManaged = selectedOption ? selectedOption.dataset.stockManaged === "1" : false;
+        const hasSizes = selectedOption ? selectedOption.dataset.hasSizes === "1" : false;
         const stockValue = selectedOption ? selectedOption.dataset.stock || "" : "";
+        const selectedSizeOption = getSelectedOption(sizeSelectElement);
+        const sizeStockValue = selectedSizeOption ? selectedSizeOption.dataset.stock || "" : "";
         const quantity = parseInt(quantityInput.value || "0", 10) || 0;
         const lineTotal = unitPrice * quantity;
 
@@ -1410,6 +1654,17 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!selectedOption || !selectedOption.value) {
             stockElement.textContent = "—";
             stockElement.classList.remove("is-stocked");
+        } else if (hasSizes) {
+            if (!selectedSizeOption || !selectedSizeOption.value) {
+                stockElement.textContent = "اختر المقاس";
+                stockElement.classList.remove("is-stocked");
+            } else if (isStockManaged) {
+                stockElement.textContent = "الرصيد: " + (sizeStockValue === "" ? "0" : sizeStockValue);
+                stockElement.classList.add("is-stocked");
+            } else {
+                stockElement.textContent = "المقاس متاح";
+                stockElement.classList.remove("is-stocked");
+            }
         } else if (isStockManaged) {
             stockElement.textContent = "الرصيد: " + (stockValue === "" ? "0" : stockValue);
             stockElement.classList.add("is-stocked");
@@ -1453,11 +1708,23 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const bindRow = function (rowElement) {
         const selectElement = rowElement.querySelector(".sales-item-select");
+        const sizeSelectElement = rowElement.querySelector(".sales-item-size-select");
         const quantityInput = rowElement.querySelector(".sales-item-quantity");
         const removeButton = rowElement.querySelector(".sales-remove-row");
 
         if (selectElement) {
+            populateSizeSelect(rowElement);
             selectElement.addEventListener("change", function () {
+                rowElement.setAttribute("data-selected-size-name", "");
+                populateSizeSelect(rowElement);
+                updateRow(rowElement);
+                updateInvoiceTotals();
+            });
+        }
+
+        if (sizeSelectElement) {
+            sizeSelectElement.addEventListener("change", function () {
+                rowElement.setAttribute("data-selected-size-name", sizeSelectElement.value || "");
                 updateRow(rowElement);
                 updateInvoiceTotals();
             });
@@ -1483,6 +1750,7 @@ document.addEventListener("DOMContentLoaded", function () {
             });
         }
 
+        populateSizeSelect(rowElement);
         updateRow(rowElement);
     };
 

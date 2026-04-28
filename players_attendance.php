@@ -288,7 +288,25 @@ function getPlayerAttendanceBlockMessage(array $player, DateTimeImmutable $today
     return "";
 }
 
-function fetchPlayerAttendanceRecords(PDO $pdo, $gameId, $dateFrom, $dateTo, $groupId, $statusFilter, $searchTerm)
+function normalizeAttendanceHourFilterValue($value)
+{
+    $value = trim((string)$value);
+    if ($value === "") {
+        return "";
+    }
+
+    if (preg_match('/^\d{2}:\d{2}$/', $value) === 1) {
+        return $value . ":00";
+    }
+
+    if (preg_match('/^\d{2}:\d{2}:\d{2}$/', $value) === 1) {
+        return $value;
+    }
+
+    return "";
+}
+
+function fetchPlayerAttendanceRecords(PDO $pdo, $gameId, $dateFrom, $dateTo, $groupId, $statusFilter, $searchTerm, $timeFrom = "", $timeTo = "")
 {
     $presentStatus = PLAYER_ATTENDANCE_STATUS_PRESENT;
     $sql = "SELECT
@@ -358,6 +376,16 @@ function fetchPlayerAttendanceRecords(PDO $pdo, $gameId, $dateFrom, $dateTo, $gr
         $params[] = $searchLike;
     }
 
+    if ((string)$timeFrom !== "") {
+        $sql .= " AND TIME(COALESCE(pa.attendance_at, pa.created_at)) >= ?";
+        $params[] = (string)$timeFrom;
+    }
+
+    if ((string)$timeTo !== "") {
+        $sql .= " AND TIME(COALESCE(pa.attendance_at, pa.created_at)) <= ?";
+        $params[] = (string)$timeTo;
+    }
+
     $sql .= " ORDER BY pa.attendance_date DESC, COALESCE(pa.attendance_at, pa.created_at) DESC, pa.id DESC";
 
     $stmt = $pdo->prepare($sql);
@@ -366,7 +394,7 @@ function fetchPlayerAttendanceRecords(PDO $pdo, $gameId, $dateFrom, $dateTo, $gr
     return $stmt->fetchAll();
 }
 
-function fetchSingleTrainingAttendanceLogRecords(PDO $pdo, $gameId, $dateFrom, $dateTo, $groupId, $statusFilter, $searchTerm)
+function fetchSingleTrainingAttendanceLogRecords(PDO $pdo, $gameId, $dateFrom, $dateTo, $groupId, $statusFilter, $searchTerm, $timeFrom = "", $timeTo = "")
 {
     if ((string)$statusFilter === PLAYER_ATTENDANCE_STATUS_ABSENT) {
         return [];
@@ -444,6 +472,16 @@ function fetchSingleTrainingAttendanceLogRecords(PDO $pdo, $gameId, $dateFrom, $
         $params[] = $searchLike;
         $params[] = $searchLike;
         $params[] = $searchLike;
+    }
+
+    if ((string)$timeFrom !== "") {
+        $sql .= " AND TIME(sta.attended_at) >= ?";
+        $params[] = (string)$timeFrom;
+    }
+
+    if ((string)$timeTo !== "") {
+        $sql .= " AND TIME(sta.attended_at) <= ?";
+        $params[] = (string)$timeTo;
     }
 
     $sql .= " ORDER BY sta.attendance_date DESC, sta.attended_at DESC, sta.id DESC";
@@ -1227,6 +1265,13 @@ $statusFilter = trim((string)($_GET["status"] ?? ""));
 if ($statusFilter !== PLAYER_ATTENDANCE_STATUS_PRESENT && $statusFilter !== PLAYER_ATTENDANCE_STATUS_ABSENT) {
     $statusFilter = "";
 }
+$timeFrom = normalizeAttendanceHourFilterValue($_GET["time_from"] ?? "");
+$timeTo = normalizeAttendanceHourFilterValue($_GET["time_to"] ?? "");
+if ($timeFrom !== "" && $timeTo !== "" && $timeFrom > $timeTo) {
+    $temporaryTime = $timeFrom;
+    $timeFrom = $timeTo;
+    $timeTo = $temporaryTime;
+}
 
 $searchTerm = strip_tags(trim((string)($_GET["search"] ?? "")));
 if (function_exists("mb_substr")) {
@@ -1236,10 +1281,10 @@ if (function_exists("mb_substr")) {
 }
 
 $records = [];
-foreach (fetchPlayerAttendanceRecords($pdo, $currentGameId, $dateFrom, $dateTo, $selectedGroupId, $statusFilter, $searchTerm) as $recordRow) {
+foreach (fetchPlayerAttendanceRecords($pdo, $currentGameId, $dateFrom, $dateTo, $selectedGroupId, $statusFilter, $searchTerm, $timeFrom, $timeTo) as $recordRow) {
     $records[] = attachPlayerAttendanceSortTimestamp(buildPlayerAttendanceSnapshot($recordRow, $today));
 }
-foreach (fetchSingleTrainingAttendanceLogRecords($pdo, $currentGameId, $dateFrom, $dateTo, $selectedGroupId, $statusFilter, $searchTerm) as $recordRow) {
+foreach (fetchSingleTrainingAttendanceLogRecords($pdo, $currentGameId, $dateFrom, $dateTo, $selectedGroupId, $statusFilter, $searchTerm, $timeFrom, $timeTo) as $recordRow) {
     $records[] = attachPlayerAttendanceSortTimestamp(buildPlayerAttendanceSnapshot($recordRow, $today));
 }
 usort($records, function (array $firstRecord, array $secondRecord) {
@@ -1284,6 +1329,8 @@ $exportQuery = http_build_query([
     "date_to" => $dateTo,
     "group_id" => $selectedGroupId,
     "status" => $statusFilter,
+    "time_from" => $timeFrom === "" ? "" : substr($timeFrom, 0, 5),
+    "time_to" => $timeTo === "" ? "" : substr($timeTo, 0, 5),
     "search" => $searchTerm,
     "export" => "xlsx",
 ]);
@@ -1582,6 +1629,14 @@ $selectedSingleTrainingPriceLabel = $selectedSingleTraining ? formatPlayerCurren
                                     <option value="<?php echo htmlspecialchars(PLAYER_ATTENDANCE_STATUS_PRESENT, ENT_QUOTES, "UTF-8"); ?>" <?php echo $statusFilter === PLAYER_ATTENDANCE_STATUS_PRESENT ? "selected" : ""; ?>>حضور</option>
                                     <option value="<?php echo htmlspecialchars(PLAYER_ATTENDANCE_STATUS_ABSENT, ENT_QUOTES, "UTF-8"); ?>" <?php echo $statusFilter === PLAYER_ATTENDANCE_STATUS_ABSENT ? "selected" : ""; ?>>غياب</option>
                                 </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="timeFrom">من الساعة</label>
+                                <input type="time" name="time_from" id="timeFrom" value="<?php echo htmlspecialchars($timeFrom === "" ? "" : substr($timeFrom, 0, 5), ENT_QUOTES, "UTF-8"); ?>">
+                            </div>
+                            <div class="form-group">
+                                <label for="timeTo">إلى الساعة</label>
+                                <input type="time" name="time_to" id="timeTo" value="<?php echo htmlspecialchars($timeTo === "" ? "" : substr($timeTo, 0, 5), ENT_QUOTES, "UTF-8"); ?>">
                             </div>
                             <div class="form-group">
                                 <label for="searchAttendance">بحث</label>
