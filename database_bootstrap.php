@@ -833,6 +833,7 @@ function seedDefaultApplicationData(PDO $pdo)
                  WHERE id = ?"
             );
             $updateFlagsStmt->execute([(int)$adminUser["id"]]);
+            error_log("seedDefaultApplicationData: default admin account is still using the requested password 123456. Change it after first login.");
         }
 
         $adminUserId = (int)$adminUser["id"];
