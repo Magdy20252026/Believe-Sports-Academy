@@ -452,6 +452,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
             $selectedGroupPrice = $selectedGroup ? getPlayerGroupPriceByCategory($selectedGroup, $formData['player_category']) : 0;
             $selectedGroupTrainingDayKeys = $selectedGroup ? getPlayerTrainingDayKeys($selectedGroup['training_day_keys'] ?? '') : [];
             $selectedGroupTrainingTime = $selectedGroup ? normalizeTrainingTimeValue($selectedGroup['training_time'] ?? '') : '';
+            $currentSavedPlayerLevel = '';
+
+            if ($formData['id'] > 0) {
+                $currentPlayerLevelStmt = $pdo->prepare(
+                    'SELECT player_level
+                     FROM players
+                     WHERE id = ? AND game_id = ?
+                     LIMIT 1'
+                );
+                $currentPlayerLevelStmt->execute([$formData['id'], $currentGameId]);
+                $currentSavedPlayerLevel = trim((string)($currentPlayerLevelStmt->fetchColumn() ?: ''));
+            }
 
             if ($selectedGroup) {
                 $formData['group_level'] = (string)$selectedGroup['group_level'];
@@ -495,7 +507,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                 $error = 'مستوى اللعبة مطلوب.';
             } elseif (strlen($formData['player_level']) > PLAYER_LEVEL_MAX_LENGTH) {
                 $error = 'مستوى اللعبة طويل جدًا.';
-            } elseif (count($gameLevelOptions) > 0 && !in_array($formData['player_level'], $gameLevelOptions, true)) {
+            } elseif (
+                count($gameLevelOptions) > 0
+                && !in_array($formData['player_level'], $gameLevelOptions, true)
+                && $formData['player_level'] !== $currentSavedPlayerLevel
+            ) {
                 $error = 'مستوى اللعبة غير متاح.';
             } elseif ($formData['receipt_number'] === '') {
                 $error = 'رقم الإيصال مطلوب.';

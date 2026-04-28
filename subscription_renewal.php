@@ -11,6 +11,9 @@ ensurePlayersTables($pdo);
 
 date_default_timezone_set('Africa/Cairo');
 
+const SUBSCRIPTION_RENEWAL_RECEIPT_NUMBER_MAX_LENGTH = 100;
+const SUBSCRIPTION_RENEWAL_SUBSCRIBER_NUMBER_MAX_LENGTH = 100;
+
 if (!isset($_SESSION['subscription_renewal_csrf_token'])) {
     $_SESSION['subscription_renewal_csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -32,7 +35,6 @@ function fetchSubscriptionRenewalPlayers(PDO $pdo, $gameId, $search = '')
                 p.group_level,
                 p.receipt_number,
                 p.subscriber_number,
-                p.subscription_number,
                 p.training_days_per_week,
                 p.total_training_days,
                 p.total_trainings,
@@ -273,11 +275,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'تاريخ نهاية الاشتراك يجب أن يكون بعد تاريخ البداية.';
             } elseif ($formData['receipt_number'] === '') {
                 $error = 'رقم الإيصال مطلوب.';
-            } elseif (strlen($formData['receipt_number']) > 100) {
+            } elseif (strlen($formData['receipt_number']) > SUBSCRIPTION_RENEWAL_RECEIPT_NUMBER_MAX_LENGTH) {
                 $error = 'رقم الإيصال طويل جدًا.';
             } elseif ($formData['subscriber_number'] === '') {
                 $error = 'رقم المشترك مطلوب.';
-            } elseif (strlen($formData['subscriber_number']) > 100) {
+            } elseif (strlen($formData['subscriber_number']) > SUBSCRIPTION_RENEWAL_SUBSCRIBER_NUMBER_MAX_LENGTH) {
                 $error = 'رقم المشترك طويل جدًا.';
             } elseif ($formData['paid_amount'] === '') {
                 $error = 'المبلغ المدفوع غير صحيح.';
