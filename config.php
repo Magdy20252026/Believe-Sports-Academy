@@ -51,9 +51,15 @@ try {
     die("فشل الاتصال بقاعدة البيانات: " . $e->getMessage());
 }
 
-require_once __DIR__ . "/audit.php";
-auditEnsureSchema($pdo);
+require_once __DIR__ . "/database_bootstrap.php";
+bootstrapCoreApplicationDatabase($pdo);
 
 require_once __DIR__ . "/branches_support.php";
 ensureBranchSchema($pdo);
+
+bootstrapFeatureApplicationDatabase($pdo);
+seedDefaultApplicationData($pdo);
+
+require_once __DIR__ . "/audit.php";
+auditEnsureSchema($pdo);
 ?>
