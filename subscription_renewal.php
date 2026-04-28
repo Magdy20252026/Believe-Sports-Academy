@@ -11,6 +11,9 @@ ensurePlayersTables($pdo);
 
 date_default_timezone_set('Africa/Cairo');
 
+const SUBSCRIPTION_RENEWAL_RECEIPT_NUMBER_MAX_LENGTH = 100;
+const SUBSCRIPTION_RENEWAL_SUBSCRIBER_NUMBER_MAX_LENGTH = 100;
+
 if (!isset($_SESSION['subscription_renewal_csrf_token'])) {
     $_SESSION['subscription_renewal_csrf_token'] = bin2hex(random_bytes(32));
 }
@@ -30,6 +33,8 @@ function fetchSubscriptionRenewalPlayers(PDO $pdo, $gameId, $search = '')
                 p.subscription_end_date,
                 p.group_name,
                 p.group_level,
+                p.receipt_number,
+                p.subscriber_number,
                 p.training_days_per_week,
                 p.total_training_days,
                 p.total_trainings,
@@ -182,6 +187,8 @@ $formData = [
     'group_id' => '',
     'subscription_start_date' => $today->format('Y-m-d'),
     'subscription_end_date' => $today->modify('+30 days')->format('Y-m-d'),
+    'receipt_number' => '',
+    'subscriber_number' => '',
     'paid_amount' => '',
     'academy_percentage' => '0.00',
     'academy_amount' => '0.00',
@@ -223,6 +230,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'group_id' => trim((string)($_POST['group_id'] ?? '')),
                 'subscription_start_date' => trim((string)($_POST['subscription_start_date'] ?? '')),
                 'subscription_end_date' => trim((string)($_POST['subscription_end_date'] ?? '')),
+                'receipt_number' => trim((string)($_POST['receipt_number'] ?? '')),
+                'subscriber_number' => trim((string)($_POST['subscriber_number'] ?? '')),
                 'paid_amount' => normalizePlayerMoneyValue($_POST['paid_amount'] ?? ''),
                 'academy_percentage' => '0.00',
                 'academy_amount' => '0.00',
@@ -264,6 +273,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error = 'تاريخ نهاية الاشتراك غير صحيح.';
             } elseif (createPlayerDate($formData['subscription_end_date']) <= createPlayerDate($formData['subscription_start_date'])) {
                 $error = 'تاريخ نهاية الاشتراك يجب أن يكون بعد تاريخ البداية.';
+            } elseif ($formData['receipt_number'] === '') {
+                $error = 'رقم الإيصال مطلوب.';
+            } elseif (strlen($formData['receipt_number']) > SUBSCRIPTION_RENEWAL_RECEIPT_NUMBER_MAX_LENGTH) {
+                $error = 'رقم الإيصال طويل جدًا.';
+            } elseif ($formData['subscriber_number'] === '') {
+                $error = 'رقم المشترك مطلوب.';
+            } elseif (strlen($formData['subscriber_number']) > SUBSCRIPTION_RENEWAL_SUBSCRIBER_NUMBER_MAX_LENGTH) {
+                $error = 'رقم المشترك طويل جدًا.';
             } elseif ($formData['paid_amount'] === '') {
                 $error = 'المبلغ المدفوع غير صحيح.';
             } elseif ((float)$formData['paid_amount'] > (float)$selectedGroupPrice) {
@@ -290,9 +307,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $saveStmt = $pdo->prepare(
                     'UPDATE players
                      SET group_id = ?, subscription_start_date = ?, subscription_end_date = ?, group_name = ?, group_level = ?,
-                         training_days_per_week = ?, total_training_days = ?, total_trainings = ?, trainer_name = ?,
-                         subscription_price = ?, paid_amount = ?, academy_percentage = ?, academy_amount = ?, training_day_keys = ?, training_time = ?
-                      WHERE id = ? AND game_id = ?'
+                         receipt_number = ?, subscriber_number = ?,
+                          training_days_per_week = ?, total_training_days = ?, total_trainings = ?, trainer_name = ?,
+                          subscription_price = ?, paid_amount = ?, academy_percentage = ?, academy_amount = ?, training_day_keys = ?, training_time = ?
+                       WHERE id = ? AND game_id = ?'
                 );
 
                 try {
@@ -304,6 +322,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $formData['subscription_end_date'],
                         $selectedGroup['group_name'],
                         $selectedGroup['group_level'],
+                        $formData['receipt_number'],
+                        $formData['subscriber_number'],
                         (int)$selectedGroup['training_days_count'],
                         (int)$selectedGroup['trainings_count'],
                         (int)$selectedGroup['exercises_count'],
@@ -352,6 +372,8 @@ if ($renewPlayerId > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
             'group_id' => $defaultGroupId,
             'subscription_start_date' => $defaultStartDate,
             'subscription_end_date' => createPlayerDate($defaultStartDate)->modify('+30 days')->format('Y-m-d'),
+            'receipt_number' => (string)($renewPlayer['receipt_number'] ?? ''),
+            'subscriber_number' => (string)($renewPlayer['subscriber_number'] ?? ''),
             'paid_amount' => $defaultPaid,
             'academy_percentage' => formatPlayerCurrency($defaultGroup['academy_percentage'] ?? 0),
             'academy_amount' => formatPlayerCurrency(calculatePlayerAcademyAmount($defaultPaid, $defaultGroup['academy_percentage'] ?? 0)),
@@ -797,6 +819,14 @@ foreach ($groups as $group) {
                     <div class="form-group">
                         <label for="subscription_end_date">تاريخ نهاية الاشتراك</label>
                         <input type="date" name="subscription_end_date" id="subscription_end_date" value="<?php echo htmlspecialchars($formData['subscription_end_date'], ENT_QUOTES, 'UTF-8'); ?>" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="receipt_number">رقم الإيصال</label>
+                        <input type="text" name="receipt_number" id="receipt_number" value="<?php echo htmlspecialchars($formData['receipt_number'], ENT_QUOTES, 'UTF-8'); ?>" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="subscriber_number">رقم المشترك</label>
+                        <input type="text" name="subscriber_number" id="subscriber_number" value="<?php echo htmlspecialchars($formData['subscriber_number'], ENT_QUOTES, 'UTF-8'); ?>" required>
                     </div>
                     <div class="form-group">
                         <label for="group_level_display">مستوى المجموعة</label>

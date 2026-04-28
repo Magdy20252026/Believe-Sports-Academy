@@ -4,61 +4,7 @@ startSecureSession();
 require_once "config.php";
 require_once "navigation.php";
 require_once "players_support.php";
-
-const GROUP_LEVELS_BY_GAME = [
-    "جمباز" => [
-        "بيبي فتنس جمباز",
-        "مدارس جمباز",
-        "تجهيزي فني",
-        "تجهيزي ايروبيك",
-        "جمباز ايروبيك",
-        "تحت ٦ سنوات جمباز فني",
-        "تحت ٧ سنوات جمباز فني",
-        "تحت ٨ سنوات جمباز فني",
-        "تحت ٩ سنوات جمباز فني",
-        "تحت ١٠ سنوات جمباز فني",
-        "باليه جمباز",
-        "باليهات جمباز",
-    ],
-    "سباحة" => [
-        "مدارس سباحة يومين",
-        "مدارس سباحة ٣ ايام",
-        "مدارس سباحة مميز",
-        "برايفت سباحة",
-        "تجهيزي سباحة",
-        "فريق سباحة",
-    ],
-    "خماسي" => [
-        "اوبستكلس 8 حصص",
-        "اوبستكلس 12 حصة",
-        "فريق ثنائي (ليزر رن)",
-        "مدارس ثنائي (جري و سباحة)",
-        "فريق ثنائي (جري و سباحة)",
-        "مدارس ثنائي (اوبستكلس سباحة)",
-        "فريق ثنائي (اوبستكلس سباحة)",
-        "فريق ثلاثي (اوبستكلس ليزر رن)",
-        "مدارس ثلاثي (سباحة ليزر رن)",
-        "فريق ثلاثي (سباحة ليزر رن)",
-        "فريق رباعي (سباحة اوبستكلس ليزر رن)",
-        "فريق خماسي حديث",
-    ],
-    "فتنس" => [
-        "فتنس ارضي",
-        "فتنس وظيفي",
-        "فتنس مميز",
-        "فتنس برايفت",
-    ],
-    "يد" => [
-        "مدارس",
-        "تجهيزي",
-        "فريق",
-    ],
-    "طايرة" => [
-        "مدارس",
-        "تجهيزي",
-        "فريق",
-    ],
-];
+require_once "game_levels_support.php";
 
 requireAuthenticatedUser();
 requireMenuAccess("groups");
@@ -145,12 +91,6 @@ function ensureSportsGroupsTable(PDO $pdo)
              FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE"
         );
     }
-}
-
-function getGroupLevelsForGame($gameName)
-{
-    $gameName = trim((string)$gameName);
-    return GROUP_LEVELS_BY_GAME[$gameName] ?? [];
 }
 
 function normalizeArabicNumericInput($value)
@@ -269,6 +209,7 @@ if (!isset($_SESSION["groups_csrf_token"])) {
 }
 
 ensureSportsGroupsTable($pdo);
+ensureGameLevelsTable($pdo);
 
 $success = "";
 $error = "";
@@ -293,7 +234,20 @@ if ($currentGameId <= 0 || !isset($allGameMap[$currentGameId])) {
     exit;
 }
 
-$levelOptions = getGroupLevelsForGame($currentGameName);
+$levelOptions = fetchGameLevels($pdo, $currentGameId);
+$existingLevelOptionsStmt = $pdo->prepare(
+    "SELECT DISTINCT group_level
+     FROM sports_groups
+     WHERE game_id = ? AND group_level <> ''
+     ORDER BY group_level ASC"
+);
+$existingLevelOptionsStmt->execute([$currentGameId]);
+foreach ($existingLevelOptionsStmt->fetchAll(PDO::FETCH_COLUMN) as $existingLevelOption) {
+    $existingLevelOption = trim((string)$existingLevelOption);
+    if ($existingLevelOption !== '' && !in_array($existingLevelOption, $levelOptions, true)) {
+        $levelOptions[] = $existingLevelOption;
+    }
+}
 $trainerSuggestions = [];
 
 try {
