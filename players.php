@@ -193,19 +193,6 @@ foreach ($groups as $group) {
 }
 
 $gameLevelOptions = fetchGameLevels($pdo, $currentGameId);
-$existingPlayerLevelsStmt = $pdo->prepare(
-    "SELECT DISTINCT player_level
-     FROM players
-     WHERE game_id = ? AND player_level <> ''
-     ORDER BY player_level ASC"
-);
-$existingPlayerLevelsStmt->execute([$currentGameId]);
-foreach ($existingPlayerLevelsStmt->fetchAll(PDO::FETCH_COLUMN) as $existingPlayerLevel) {
-    $existingPlayerLevel = trim((string)$existingPlayerLevel);
-    if ($existingPlayerLevel !== '' && !in_array($existingPlayerLevel, $gameLevelOptions, true)) {
-        $gameLevelOptions[] = $existingPlayerLevel;
-    }
-}
 
 $groupLevels = [];
 foreach ($groups as $group) {
@@ -452,19 +439,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
             $selectedGroupPrice = $selectedGroup ? getPlayerGroupPriceByCategory($selectedGroup, $formData['player_category']) : 0;
             $selectedGroupTrainingDayKeys = $selectedGroup ? getPlayerTrainingDayKeys($selectedGroup['training_day_keys'] ?? '') : [];
             $selectedGroupTrainingTime = $selectedGroup ? normalizeTrainingTimeValue($selectedGroup['training_time'] ?? '') : '';
-            $currentSavedPlayerLevel = '';
-
-            if ($formData['id'] > 0) {
-                $currentPlayerLevelStmt = $pdo->prepare(
-                    'SELECT player_level
-                     FROM players
-                     WHERE id = ? AND game_id = ?
-                     LIMIT 1'
-                );
-                $currentPlayerLevelStmt->execute([$formData['id'], $currentGameId]);
-                $currentSavedPlayerLevel = trim((string)($currentPlayerLevelStmt->fetchColumn() ?: ''));
-            }
-
             if ($selectedGroup) {
                 $formData['group_level'] = (string)$selectedGroup['group_level'];
                 $formData['training_days_per_week'] = (string)count($formData['training_day_keys']);
@@ -503,15 +477,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                 $error = 'مستوى مجموعة اللاعب مطلوب.';
             } elseif (!isset($groupLevels[$formData['selected_group_level']])) {
                 $error = 'مستوى مجموعة اللاعب غير متاح.';
+            } elseif (count($gameLevelOptions) === 0) {
+                $error = 'سجّل مستويات اللعبة أولًا من صفحة الألعاب.';
             } elseif ($formData['player_level'] === '') {
                 $error = 'مستوى اللعبة مطلوب.';
             } elseif (strlen($formData['player_level']) > PLAYER_LEVEL_MAX_LENGTH) {
                 $error = 'مستوى اللعبة طويل جدًا.';
-            } elseif (
-                count($gameLevelOptions) > 0
-                && !in_array($formData['player_level'], $gameLevelOptions, true)
-                && $formData['player_level'] !== $currentSavedPlayerLevel
-            ) {
+            } elseif (!in_array($formData['player_level'], $gameLevelOptions, true)) {
                 $error = 'مستوى اللعبة غير متاح.';
             } elseif ($formData['receipt_number'] === '') {
                 $error = 'رقم الإيصال مطلوب.';
@@ -1460,7 +1432,10 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
                     </div>
                     <div class="form-group">
                         <label for="player_level">مستوى اللعبة</label>
-                        <?php if (count($gameLevelOptions) > 0): ?>
+                        <?php if (count($gameLevelOptions) === 0): ?>
+                            <input type="text" id="player_level" value="سجّل مستويات اللعبة أولًا من صفحة الألعاب" disabled>
+                            <small class="text-muted">لن تستطيع حفظ اللاعب قبل إضافة مستويات للعبة الحالية من صفحة الألعاب.</small>
+                        <?php else: ?>
                             <div class="select-shell">
                                 <select name="player_level" id="player_level" required>
                                     <option value="">اختر مستوى اللعبة</option>
@@ -1471,8 +1446,6 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                        <?php else: ?>
-                            <input type="text" name="player_level" id="player_level" value="<?php echo htmlspecialchars($formData['player_level'], ENT_QUOTES, 'UTF-8'); ?>" maxlength="<?php echo PLAYER_LEVEL_MAX_LENGTH; ?>" required>
                         <?php endif; ?>
                     </div>
                     <div class="form-group">
