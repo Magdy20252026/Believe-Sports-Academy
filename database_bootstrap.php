@@ -21,6 +21,7 @@ function bootstrapCoreApplicationDatabase(PDO $pdo)
             return;
         }
     } catch (Throwable $throwable) {
+        error_log("bootstrapCoreApplicationDatabase: failed to inspect existing tables: " . $throwable->getMessage());
     }
 
     $statements = [
@@ -96,6 +97,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             return;
         }
     } catch (Throwable $throwable) {
+        error_log("bootstrapFeatureApplicationDatabase: failed to inspect existing tables: " . $throwable->getMessage());
     }
 
     $statements = [
@@ -771,6 +773,7 @@ function seedDefaultApplicationData(PDO $pdo)
     try {
         $branches = $pdo->query("SELECT id, name FROM branches WHERE status = 1 ORDER BY id ASC")->fetchAll();
     } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to fetch active branches: " . $throwable->getMessage());
     }
 
     $gamesCount = (int)$pdo->query("SELECT COUNT(*) FROM games WHERE status = 1")->fetchColumn();
@@ -796,9 +799,7 @@ function seedDefaultApplicationData(PDO $pdo)
     if ($adminUser) {
         $storedPassword = (string)($adminUser["password"] ?? "");
         $passwordInfo = password_get_info($storedPassword);
-        $passwordMatches = !empty($passwordInfo["algo"])
-            ? password_verify("123456", $storedPassword)
-            : hash_equals($storedPassword, "123456");
+        $passwordMatches = !empty($passwordInfo["algo"]) && password_verify("123456", $storedPassword);
 
         if (!$passwordMatches || (string)($adminUser["role"] ?? "") !== "مدير") {
             $updateAdminStmt = $pdo->prepare(
@@ -836,6 +837,7 @@ function seedDefaultApplicationData(PDO $pdo)
              SELECT ?, b.id FROM branches b WHERE b.status = 1"
         )->execute([$adminUserId]);
     } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to grant admin branch access: " . $throwable->getMessage());
     }
 
     try {
@@ -844,5 +846,6 @@ function seedDefaultApplicationData(PDO $pdo)
              SELECT ?, g.id FROM games g WHERE g.status = 1"
         )->execute([$adminUserId]);
     } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to grant admin game access: " . $throwable->getMessage());
     }
 }
