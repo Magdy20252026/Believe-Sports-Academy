@@ -1268,9 +1268,9 @@ if ($statusFilter !== PLAYER_ATTENDANCE_STATUS_PRESENT && $statusFilter !== PLAY
 $timeFrom = normalizeAttendanceHourFilterValue($_GET["time_from"] ?? "");
 $timeTo = normalizeAttendanceHourFilterValue($_GET["time_to"] ?? "");
 if ($timeFrom !== "" && $timeTo !== "" && $timeFrom > $timeTo) {
-    $temporaryTime = $timeFrom;
+    $swapTime = $timeFrom;
     $timeFrom = $timeTo;
-    $timeTo = $temporaryTime;
+    $timeTo = $swapTime;
 }
 
 $searchTerm = strip_tags(trim((string)($_GET["search"] ?? "")));

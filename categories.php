@@ -238,6 +238,15 @@ function normalizeCategorySizeKey($value)
         : strtolower($value);
 }
 
+function hasDuplicateCategorySizeNames(array $sizeRows)
+{
+    $normalizedNames = array_map(function ($sizeRow) {
+        return normalizeCategorySizeKey($sizeRow["size_name"] ?? "");
+    }, $sizeRows);
+
+    return count(array_unique($normalizedNames)) !== count($sizeRows);
+}
+
 function fetchCategorySizesByCategoryIds(PDO $pdo, array $categoryIds)
 {
     $categoryIds = array_values(array_unique(array_map("intval", $categoryIds)));
@@ -402,12 +411,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "السعر يجب أن يكون رقماً موجباً أو صفراً.";
             } elseif ($formData["has_sizes"] && count($formData["sizes"]) === 0) {
                 $error = "أضف مقاسًا واحدًا على الأقل لهذا الصنف.";
-            } elseif (
-                $formData["has_sizes"]
-                && count(array_unique(array_map(function ($sizeRow) {
-                    return normalizeCategorySizeKey($sizeRow["size_name"] ?? "");
-                }, $formData["sizes"]))) !== count($formData["sizes"])
-            ) {
+            } elseif ($formData["has_sizes"] && hasDuplicateCategorySizeNames($formData["sizes"])) {
                 $error = "لا يمكن تكرار نفس المقاس داخل الصنف.";
             } elseif (
                 $formData["has_sizes"]

@@ -508,6 +508,16 @@ function fetchSalesInvoiceWithItems(PDO $pdo, $invoiceId, $gameId)
     return $invoice;
 }
 
+function calculateSalesSizeTotalQuantity(array $sizeRows)
+{
+    $total = 0;
+    foreach ($sizeRows as $sizeRow) {
+        $total += (int)($sizeRow["quantity"] ?? 0);
+    }
+
+    return $total;
+}
+
 function buildSalesLockPlaceholders(array $values)
 {
     return implode(", ", array_fill(0, count($values), "?"));
@@ -612,9 +622,7 @@ function applySalesInventoryImpact(array &$lockedCategories, $invoiceType, array
             }
 
             $lockedCategories[$categoryId]["sizes"][$sizeName]["quantity"] = $currentQuantity + $delta;
-            $lockedCategories[$categoryId]["quantity"] = array_sum(array_map(function ($sizeRow) {
-                return (int)$sizeRow["quantity"];
-            }, $lockedCategories[$categoryId]["sizes"]));
+            $lockedCategories[$categoryId]["quantity"] = calculateSalesSizeTotalQuantity($lockedCategories[$categoryId]["sizes"]);
             continue;
         }
 
@@ -1339,7 +1347,7 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                                         </thead>
                                         <tbody id="salesItemsBody">
                                             <?php foreach ($formData["items"] as $itemIndex => $itemRow): ?>
-                                                <tr class="sales-item-row" data-selected-size-name="<?php echo htmlspecialchars((string)($itemRow["size_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>">
+                                                <tr class="sales-item-row">
                                                     <td data-label="الصنف">
                                                         <select name="item_category_id[]" class="sales-item-select" required>
                                                             <option value="">اختر الصنف</option>
@@ -1362,6 +1370,7 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                                                         <select name="item_size_name[]" class="sales-item-size-select">
                                                             <option value="">بدون مقاس</option>
                                                         </select>
+                                                        <input type="hidden" class="sales-item-size-value" value="<?php echo htmlspecialchars((string)($itemRow["size_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>">
                                                     </td>
                                                     <td data-label="الرصيد">
                                                         <span class="sales-stock-pill">—</span>
@@ -1504,7 +1513,7 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
 
 <?php if (count($categories) > 0): ?>
 <template id="salesItemRowTemplate">
-    <tr class="sales-item-row" data-selected-size-name="">
+    <tr class="sales-item-row">
         <td data-label="الصنف">
             <select name="item_category_id[]" class="sales-item-select" required>
                 <option value="">اختر الصنف</option>
@@ -1526,6 +1535,7 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
             <select name="item_size_name[]" class="sales-item-size-select">
                 <option value="">بدون مقاس</option>
             </select>
+            <input type="hidden" class="sales-item-size-value" value="">
         </td>
         <td data-label="الرصيد">
             <span class="sales-stock-pill">—</span>
@@ -1590,8 +1600,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const populateSizeSelect = function (rowElement) {
         const selectElement = rowElement.querySelector(".sales-item-select");
         const sizeSelectElement = rowElement.querySelector(".sales-item-size-select");
+        const sizeValueInput = rowElement.querySelector(".sales-item-size-value");
         const selectedOption = getSelectedOption(selectElement);
-        const selectedSizeName = rowElement.getAttribute("data-selected-size-name") || "";
+        const selectedSizeName = sizeValueInput ? (sizeValueInput.value || "") : "";
 
         if (!sizeSelectElement) {
             return;
@@ -1607,6 +1618,9 @@ document.addEventListener("DOMContentLoaded", function () {
             sizeSelectElement.required = false;
             sizeSelectElement.disabled = true;
             sizeSelectElement.value = "";
+            if (sizeValueInput) {
+                sizeValueInput.value = "";
+            }
             return;
         }
 
@@ -1628,6 +1642,9 @@ document.addEventListener("DOMContentLoaded", function () {
         sizeSelectElement.value = selectedSizeName;
         if (sizeSelectElement.value !== selectedSizeName) {
             sizeSelectElement.value = "";
+        }
+        if (sizeValueInput) {
+            sizeValueInput.value = sizeSelectElement.value || "";
         }
     };
 
@@ -1715,7 +1732,10 @@ document.addEventListener("DOMContentLoaded", function () {
         if (selectElement) {
             populateSizeSelect(rowElement);
             selectElement.addEventListener("change", function () {
-                rowElement.setAttribute("data-selected-size-name", "");
+                const sizeValueInput = rowElement.querySelector(".sales-item-size-value");
+                if (sizeValueInput) {
+                    sizeValueInput.value = "";
+                }
                 populateSizeSelect(rowElement);
                 updateRow(rowElement);
                 updateInvoiceTotals();
@@ -1724,7 +1744,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (sizeSelectElement) {
             sizeSelectElement.addEventListener("change", function () {
-                rowElement.setAttribute("data-selected-size-name", sizeSelectElement.value || "");
+                const sizeValueInput = rowElement.querySelector(".sales-item-size-value");
+                if (sizeValueInput) {
+                    sizeValueInput.value = sizeSelectElement.value || "";
+                }
                 updateRow(rowElement);
                 updateInvoiceTotals();
             });
