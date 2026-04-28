@@ -25,7 +25,7 @@ function bootstrapCoreApplicationDatabase(PDO $pdo)
     }
 
     $statements = [
-        "CREATE TABLE IF NOT EXISTS settings (
+        "settings" => "CREATE TABLE IF NOT EXISTS settings (
             id INT(11) NOT NULL AUTO_INCREMENT,
             academy_name VARCHAR(255) NOT NULL DEFAULT 'أكاديمية رياضية',
             academy_logo VARCHAR(255) NOT NULL DEFAULT 'assets/images/logo.png',
@@ -33,7 +33,7 @@ function bootstrapCoreApplicationDatabase(PDO $pdo)
             updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS users (
+        "users" => "CREATE TABLE IF NOT EXISTS users (
             id INT(11) NOT NULL AUTO_INCREMENT,
             username VARCHAR(150) NOT NULL,
             password VARCHAR(255) NOT NULL,
@@ -46,7 +46,7 @@ function bootstrapCoreApplicationDatabase(PDO $pdo)
             PRIMARY KEY (id),
             UNIQUE KEY uniq_users_username (username)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS games (
+        "games" => "CREATE TABLE IF NOT EXISTS games (
             id INT(11) NOT NULL AUTO_INCREMENT,
             name VARCHAR(150) NOT NULL,
             branch_id INT(11) DEFAULT NULL,
@@ -59,7 +59,7 @@ function bootstrapCoreApplicationDatabase(PDO $pdo)
             KEY idx_games_branch (branch_id),
             UNIQUE KEY uniq_games_branch_name (branch_id, name)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS user_games (
+        "user_games" => "CREATE TABLE IF NOT EXISTS user_games (
             id INT(11) NOT NULL AUTO_INCREMENT,
             user_id INT(11) NOT NULL,
             game_id INT(11) NOT NULL,
@@ -71,8 +71,12 @@ function bootstrapCoreApplicationDatabase(PDO $pdo)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
     ];
 
-    foreach ($statements as $statement) {
-        $pdo->exec($statement);
+    foreach ($statements as $tableName => $statement) {
+        try {
+            $pdo->exec($statement);
+        } catch (Throwable $throwable) {
+            error_log("bootstrapCoreApplicationDatabase: failed to create {$tableName}: " . $throwable->getMessage());
+        }
     }
 }
 
@@ -101,7 +105,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
     }
 
     $statements = [
-        "CREATE TABLE IF NOT EXISTS user_game_permissions (
+        "user_game_permissions" => "CREATE TABLE IF NOT EXISTS user_game_permissions (
             id INT(11) NOT NULL AUTO_INCREMENT,
             user_id INT(11) NOT NULL,
             game_id INT(11) NOT NULL,
@@ -111,7 +115,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             UNIQUE KEY unique_user_game_permission (user_id, game_id, permission_key),
             KEY idx_user_game (user_id, game_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS activity_log (
+        "activity_log" => "CREATE TABLE IF NOT EXISTS activity_log (
             id INT(11) NOT NULL AUTO_INCREMENT,
             user_id INT(11) DEFAULT NULL,
             username_snapshot VARCHAR(150) DEFAULT NULL,
@@ -129,14 +133,14 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_activity_created (created_at),
             KEY idx_activity_game (game_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS dashboard_notification_reads (
+        "dashboard_notification_reads" => "CREATE TABLE IF NOT EXISTS dashboard_notification_reads (
             user_id INT(11) NOT NULL,
             game_id INT(11) NOT NULL,
             alert_key VARCHAR(191) NOT NULL,
             read_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (user_id, game_id, alert_key)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS sports_groups (
+        "sports_groups" => "CREATE TABLE IF NOT EXISTS sports_groups (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             group_name VARCHAR(150) NOT NULL,
@@ -158,7 +162,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_sports_groups_game (game_id),
             KEY idx_sports_groups_game_level (game_id, group_level)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS players (
+        "players" => "CREATE TABLE IF NOT EXISTS players (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             group_id INT(11) DEFAULT NULL,
@@ -198,7 +202,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_players_barcode (barcode),
             KEY idx_players_phone (phone)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS player_attendance (
+        "player_attendance" => "CREATE TABLE IF NOT EXISTS player_attendance (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             player_id INT(11) NOT NULL,
@@ -215,7 +219,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_player_attendance_game_date (game_id, attendance_date),
             KEY idx_player_attendance_player (player_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS player_subscription_history (
+        "player_subscription_history" => "CREATE TABLE IF NOT EXISTS player_subscription_history (
             id INT(11) NOT NULL AUTO_INCREMENT,
             player_id INT(11) NOT NULL,
             game_id INT(11) NOT NULL,
@@ -258,7 +262,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             CONSTRAINT fk_player_subscription_history_player FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE,
             CONSTRAINT fk_player_subscription_history_game FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS single_training_prices (
+        "single_training_prices" => "CREATE TABLE IF NOT EXISTS single_training_prices (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             training_name VARCHAR(150) NOT NULL,
@@ -269,7 +273,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             UNIQUE KEY unique_single_training_game_name (game_id, training_name),
             KEY idx_single_training_prices_game (game_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS single_training_attendance (
+        "single_training_attendance" => "CREATE TABLE IF NOT EXISTS single_training_attendance (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             single_training_id INT(11) NOT NULL,
@@ -285,7 +289,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_single_training_attendance_game_date (game_id, attendance_date),
             KEY idx_single_training_attendance_training (single_training_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS player_files (
+        "player_files" => "CREATE TABLE IF NOT EXISTS player_files (
             id INT(11) NOT NULL AUTO_INCREMENT,
             player_id INT(11) NOT NULL,
             file_name VARCHAR(255) NOT NULL,
@@ -299,7 +303,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_player_files_player (player_id),
             CONSTRAINT fk_player_files_player FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS pentathlon_player_sub_game_sessions (
+        "pentathlon_player_sub_game_sessions" => "CREATE TABLE IF NOT EXISTS pentathlon_player_sub_game_sessions (
             id INT(11) NOT NULL AUTO_INCREMENT,
             player_id INT(11) NOT NULL,
             game_id INT(11) NOT NULL,
@@ -312,7 +316,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_pentathlon_player_sub_game_player (player_id),
             KEY idx_pentathlon_player_sub_game_game (game_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS player_notifications (
+        "player_notifications" => "CREATE TABLE IF NOT EXISTS player_notifications (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             title VARCHAR(160) NOT NULL,
@@ -337,14 +341,14 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_player_notifications_group (game_id, target_group_id),
             KEY idx_player_notifications_player (game_id, target_player_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS player_notification_reads (
+        "player_notification_reads" => "CREATE TABLE IF NOT EXISTS player_notification_reads (
             notification_id INT(11) NOT NULL,
             player_id INT(11) NOT NULL,
             read_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (notification_id, player_id),
             KEY idx_player_notification_reads_player (player_id, read_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS player_subscription_alerts (
+        "player_subscription_alerts" => "CREATE TABLE IF NOT EXISTS player_subscription_alerts (
             id INT(11) NOT NULL AUTO_INCREMENT,
             player_id INT(11) NOT NULL,
             game_id INT(11) NOT NULL,
@@ -357,7 +361,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_player_subscription_alerts_game (game_id),
             KEY idx_player_subscription_alerts_player (player_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS admins (
+        "admins" => "CREATE TABLE IF NOT EXISTS admins (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             name VARCHAR(150) NOT NULL,
@@ -372,7 +376,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             PRIMARY KEY (id),
             KEY idx_admins_game (game_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS admin_days_off (
+        "admin_days_off" => "CREATE TABLE IF NOT EXISTS admin_days_off (
             id INT(11) NOT NULL AUTO_INCREMENT,
             admin_id INT(11) NOT NULL,
             day_key VARCHAR(20) NOT NULL,
@@ -381,7 +385,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             UNIQUE KEY unique_admin_day_off (admin_id, day_key),
             KEY idx_admin_days_off_admin (admin_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS admin_weekly_schedule (
+        "admin_weekly_schedule" => "CREATE TABLE IF NOT EXISTS admin_weekly_schedule (
             id INT(11) NOT NULL AUTO_INCREMENT,
             admin_id INT(11) NOT NULL,
             day_key VARCHAR(20) NOT NULL,
@@ -393,7 +397,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             UNIQUE KEY unique_admin_weekly_schedule_day (admin_id, day_key),
             KEY idx_admin_weekly_schedule_admin (admin_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS admin_attendance (
+        "admin_attendance" => "CREATE TABLE IF NOT EXISTS admin_attendance (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             admin_id INT(11) NOT NULL,
@@ -415,7 +419,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_admin_attendance_game_date (game_id, attendance_date),
             KEY idx_admin_attendance_admin (admin_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS admin_loans (
+        "admin_loans" => "CREATE TABLE IF NOT EXISTS admin_loans (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             admin_id INT(11) NOT NULL,
@@ -430,7 +434,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_admin_loans_game_date (game_id, loan_date),
             KEY idx_admin_loans_admin (admin_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS admin_deductions (
+        "admin_deductions" => "CREATE TABLE IF NOT EXISTS admin_deductions (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             admin_id INT(11) NOT NULL,
@@ -446,7 +450,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_admin_deductions_game_date (game_id, deduction_date),
             KEY idx_admin_deductions_admin (admin_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS admin_notifications (
+        "admin_notifications" => "CREATE TABLE IF NOT EXISTS admin_notifications (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             title VARCHAR(160) NOT NULL,
@@ -464,7 +468,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_admin_notifications_status (game_id, visibility_status),
             KEY idx_admin_notifications_priority (game_id, priority_level)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS admin_salary_payments (
+        "admin_salary_payments" => "CREATE TABLE IF NOT EXISTS admin_salary_payments (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             admin_id INT(11) NOT NULL,
@@ -489,7 +493,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_admin_salary_payments_game_month (game_id, salary_month),
             KEY idx_admin_salary_payments_admin (admin_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS trainers (
+        "trainers" => "CREATE TABLE IF NOT EXISTS trainers (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             name VARCHAR(150) NOT NULL,
@@ -504,7 +508,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             PRIMARY KEY (id),
             KEY idx_trainers_game (game_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS trainer_days_off (
+        "trainer_days_off" => "CREATE TABLE IF NOT EXISTS trainer_days_off (
             id INT(11) NOT NULL AUTO_INCREMENT,
             trainer_id INT(11) NOT NULL,
             day_key VARCHAR(20) NOT NULL,
@@ -513,7 +517,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             UNIQUE KEY unique_trainer_day_off (trainer_id, day_key),
             KEY idx_trainer_days_off_trainer (trainer_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS trainer_weekly_schedule (
+        "trainer_weekly_schedule" => "CREATE TABLE IF NOT EXISTS trainer_weekly_schedule (
             id INT(11) NOT NULL AUTO_INCREMENT,
             trainer_id INT(11) NOT NULL,
             day_key VARCHAR(20) NOT NULL,
@@ -525,7 +529,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             UNIQUE KEY unique_trainer_weekly_schedule_day (trainer_id, day_key),
             KEY idx_trainer_weekly_schedule_trainer (trainer_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS trainer_attendance (
+        "trainer_attendance" => "CREATE TABLE IF NOT EXISTS trainer_attendance (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             trainer_id INT(11) NOT NULL,
@@ -548,7 +552,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_trainer_attendance_game_date (game_id, attendance_date),
             KEY idx_trainer_attendance_trainer (trainer_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS trainer_loans (
+        "trainer_loans" => "CREATE TABLE IF NOT EXISTS trainer_loans (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             trainer_id INT(11) NOT NULL,
@@ -563,7 +567,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_trainer_loans_game_date (game_id, loan_date),
             KEY idx_trainer_loans_trainer (trainer_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS trainer_deductions (
+        "trainer_deductions" => "CREATE TABLE IF NOT EXISTS trainer_deductions (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             trainer_id INT(11) NOT NULL,
@@ -579,7 +583,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_trainer_deductions_game_date (game_id, deduction_date),
             KEY idx_trainer_deductions_trainer (trainer_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS trainer_notifications (
+        "trainer_notifications" => "CREATE TABLE IF NOT EXISTS trainer_notifications (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             title VARCHAR(160) NOT NULL,
@@ -597,7 +601,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_trainer_notifications_status (game_id, visibility_status),
             KEY idx_trainer_notifications_priority (game_id, priority_level)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS trainer_salary_payments (
+        "trainer_salary_payments" => "CREATE TABLE IF NOT EXISTS trainer_salary_payments (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             trainer_id INT(11) NOT NULL,
@@ -622,7 +626,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_trainer_salary_payments_game_month (game_id, salary_month),
             KEY idx_trainer_salary_payments_trainer (trainer_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS store_categories (
+        "store_categories" => "CREATE TABLE IF NOT EXISTS store_categories (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             category_name VARCHAR(150) NOT NULL,
@@ -635,7 +639,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             UNIQUE KEY unique_store_category_name_per_game (game_id, category_name),
             KEY idx_store_categories_game (game_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS store_products (
+        "store_products" => "CREATE TABLE IF NOT EXISTS store_products (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             product_name VARCHAR(150) NOT NULL,
@@ -651,7 +655,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_store_products_game (game_id),
             KEY idx_store_products_availability (game_id, is_available)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS store_orders (
+        "store_orders" => "CREATE TABLE IF NOT EXISTS store_orders (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             player_id INT(11) NOT NULL,
@@ -675,7 +679,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_store_orders_player (player_id),
             KEY idx_store_orders_status (game_id, status)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS store_expenses (
+        "store_expenses" => "CREATE TABLE IF NOT EXISTS store_expenses (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             expense_date DATE NOT NULL,
@@ -689,7 +693,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_store_expenses_game_date (game_id, expense_date),
             KEY idx_store_expenses_created_by (created_by_user_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS sales_invoices (
+        "sales_invoices" => "CREATE TABLE IF NOT EXISTS sales_invoices (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             customer_name VARCHAR(255) NOT NULL DEFAULT '',
@@ -705,7 +709,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_sales_invoices_game_date (game_id, invoice_date),
             KEY idx_sales_invoices_type (invoice_type)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS sales_invoice_items (
+        "sales_invoice_items" => "CREATE TABLE IF NOT EXISTS sales_invoice_items (
             id INT(11) NOT NULL AUTO_INCREMENT,
             invoice_id INT(11) NOT NULL,
             category_id INT(11) NOT NULL,
@@ -718,7 +722,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_sales_invoice_items_invoice (invoice_id),
             KEY idx_sales_invoice_items_category (category_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS offers (
+        "offers" => "CREATE TABLE IF NOT EXISTS offers (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             title VARCHAR(180) NOT NULL,
@@ -732,7 +736,7 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
             KEY idx_offers_game (game_id),
             KEY idx_offers_updated (game_id, updated_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
-        "CREATE TABLE IF NOT EXISTS potential_customers (
+        "potential_customers" => "CREATE TABLE IF NOT EXISTS potential_customers (
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             player_name VARCHAR(255) NOT NULL,
@@ -748,8 +752,12 @@ function bootstrapFeatureApplicationDatabase(PDO $pdo)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci",
     ];
 
-    foreach ($statements as $statement) {
-        $pdo->exec($statement);
+    foreach ($statements as $tableName => $statement) {
+        try {
+            $pdo->exec($statement);
+        } catch (Throwable $throwable) {
+            error_log("bootstrapFeatureApplicationDatabase: failed to create {$tableName}: " . $throwable->getMessage());
+        }
     }
 }
 
@@ -761,7 +769,12 @@ function seedDefaultApplicationData(PDO $pdo)
     }
     $alreadyRan = true;
 
-    $settingsCount = (int)$pdo->query("SELECT COUNT(*) FROM settings")->fetchColumn();
+    try {
+        $settingsCount = (int)$pdo->query("SELECT COUNT(*) FROM settings")->fetchColumn();
+    } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to count settings rows: " . $throwable->getMessage());
+        return;
+    }
     if ($settingsCount === 0) {
         $insertSettingsStmt = $pdo->prepare(
             "INSERT INTO settings (academy_name, academy_logo) VALUES (?, ?)"
@@ -776,7 +789,12 @@ function seedDefaultApplicationData(PDO $pdo)
         error_log("seedDefaultApplicationData: failed to fetch active branches: " . $throwable->getMessage());
     }
 
-    $gamesCount = (int)$pdo->query("SELECT COUNT(*) FROM games WHERE status = 1")->fetchColumn();
+    try {
+        $gamesCount = (int)$pdo->query("SELECT COUNT(*) FROM games WHERE status = 1")->fetchColumn();
+    } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to count active games: " . $throwable->getMessage());
+        return;
+    }
     if ($gamesCount === 0 && count($branches) > 0) {
         $insertGameStmt = $pdo->prepare(
             "INSERT INTO games (name, branch_id, status) VALUES (?, ?, 1)"
