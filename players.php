@@ -461,7 +461,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                 ? (string)calculatePlayerAgeFromBirthDate($formData['birth_date'], $today)
                 : '';
 
-            if ($formData['name'] === '') {
+            if (count($gameLevelOptions) === 0) {
+                $error = 'سجّل مستويات اللعبة أولًا من صفحة الألعاب.';
+            } elseif ($formData['name'] === '') {
                 $error = 'اسم اللاعب مطلوب.';
             } elseif ($formData['phone'] === '') {
                 $error = 'رقم الهاتف مطلوب.';
@@ -473,8 +475,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                 $error = 'باركود اللاعب مطلوب.';
             } elseif (strlen($formData['barcode']) > PLAYER_BARCODE_MAX_LENGTH) {
                 $error = 'باركود اللاعب طويل جدًا.';
-            } elseif (count($gameLevelOptions) === 0) {
-                $error = 'سجّل مستويات اللعبة أولًا من صفحة الألعاب.';
             } elseif ($formData['selected_group_level'] === '') {
                 $error = 'مستوى مجموعة اللاعب مطلوب.';
             } elseif (!isset($groupLevels[$formData['selected_group_level']])) {

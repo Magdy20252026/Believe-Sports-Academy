@@ -136,59 +136,61 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $action = (string)($_POST["action"] ?? "");
 
         if ($action === "update_player_level") {
-            $playerId = (int)($_POST["player_id"] ?? 0);
-            $playerLevel = trim((string)($_POST["player_level"] ?? ""));
-
             if (count($allowedPlayerLevels) === 0) {
                 $error = "سجّل مستويات اللعبة أولًا من صفحة الألعاب.";
-            } elseif ($playerId <= 0) {
-                $error = "اللاعب غير صالح.";
-            } elseif ($playerLevel === "") {
-                $error = "مستوى اللاعب مطلوب.";
-            } elseif (strlen($playerLevel) > PLAYER_LEVEL_MAX_LENGTH) {
-                $error = "مستوى اللاعب طويل جدًا.";
-            } elseif (!in_array($playerLevel, $allowedPlayerLevels, true)) {
-                $error = "مستوى اللاعب غير متاح.";
             } else {
-                $playerStmt = $pdo->prepare(
-                    "SELECT id, player_level
-                     FROM players
-                     WHERE id = ? AND game_id = ?
-                     LIMIT 1"
-                );
-                $playerStmt->execute([$playerId, $currentGameId]);
-                $playerRow = $playerStmt->fetch();
-                if (!$playerRow) {
-                    $error = "اللاعب غير متاح.";
-                } else {
-                    try {
-                        $pdo->beginTransaction();
-                        syncPlayerSubscriptionHistoryFromPlayerId($pdo, $playerId, $currentGameId, "pre_save");
-                        $updateStmt = $pdo->prepare(
-                            "UPDATE players
-                             SET player_level = ?
-                             WHERE id = ? AND game_id = ?"
-                        );
-                        $updateStmt->execute([$playerLevel, $playerId, $currentGameId]);
-                        notifyPlayerLevelChanged(
-                            $pdo,
-                            $currentGameId,
-                            $playerId,
-                            (string)($playerRow["player_level"] ?? ""),
-                            $playerLevel
-                        );
-                        syncPlayerSubscriptionHistoryFromPlayerId($pdo, $playerId, $currentGameId, "save");
-                        auditTrack($pdo, "update", "players", $playerId, "تجلوس اللاعبين", "تحديث مستوى لاعب رقم " . $playerId . " إلى: " . (string)$playerLevel);
-                        $pdo->commit();
+                $playerId = (int)($_POST["player_id"] ?? 0);
+                $playerLevel = trim((string)($_POST["player_level"] ?? ""));
 
-                        $_SESSION["player_seating_success"] = "تم تحديث مستوى اللاعب.";
-                        header("Location: " . PLAYER_SEATING_PAGE_HREF);
-                        exit;
-                    } catch (Throwable $throwable) {
-                        if ($pdo->inTransaction()) {
-                            $pdo->rollBack();
+                if ($playerId <= 0) {
+                    $error = "اللاعب غير صالح.";
+                } elseif ($playerLevel === "") {
+                    $error = "مستوى اللاعب مطلوب.";
+                } elseif (strlen($playerLevel) > PLAYER_LEVEL_MAX_LENGTH) {
+                    $error = "مستوى اللاعب طويل جدًا.";
+                } elseif (!in_array($playerLevel, $allowedPlayerLevels, true)) {
+                    $error = "مستوى اللاعب غير متاح.";
+                } else {
+                    $playerStmt = $pdo->prepare(
+                        "SELECT id, player_level
+                         FROM players
+                         WHERE id = ? AND game_id = ?
+                         LIMIT 1"
+                    );
+                    $playerStmt->execute([$playerId, $currentGameId]);
+                    $playerRow = $playerStmt->fetch();
+                    if (!$playerRow) {
+                        $error = "اللاعب غير متاح.";
+                    } else {
+                        try {
+                            $pdo->beginTransaction();
+                            syncPlayerSubscriptionHistoryFromPlayerId($pdo, $playerId, $currentGameId, "pre_save");
+                            $updateStmt = $pdo->prepare(
+                                "UPDATE players
+                                 SET player_level = ?
+                                 WHERE id = ? AND game_id = ?"
+                            );
+                            $updateStmt->execute([$playerLevel, $playerId, $currentGameId]);
+                            notifyPlayerLevelChanged(
+                                $pdo,
+                                $currentGameId,
+                                $playerId,
+                                (string)($playerRow["player_level"] ?? ""),
+                                $playerLevel
+                            );
+                            syncPlayerSubscriptionHistoryFromPlayerId($pdo, $playerId, $currentGameId, "save");
+                            auditTrack($pdo, "update", "players", $playerId, "تجلوس اللاعبين", "تحديث مستوى لاعب رقم " . $playerId . " إلى: " . (string)$playerLevel);
+                            $pdo->commit();
+
+                            $_SESSION["player_seating_success"] = "تم تحديث مستوى اللاعب.";
+                            header("Location: " . PLAYER_SEATING_PAGE_HREF);
+                            exit;
+                        } catch (Throwable $throwable) {
+                            if ($pdo->inTransaction()) {
+                                $pdo->rollBack();
+                            }
+                            $error = "تعذر تحديث مستوى اللاعب.";
                         }
-                        $error = "تعذر تحديث مستوى اللاعب.";
                     }
                 }
             }
