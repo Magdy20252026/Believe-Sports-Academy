@@ -429,7 +429,7 @@ function collectSalesInvoiceItems(array $categoryIds, array $sizeNames, array $q
         }
 
         $category = $categoriesMap[$categoryId];
-        $selectedSizeName = "";
+        $invoiceItemSizeName = "";
         if (($category["has_sizes"] ?? false) === true) {
             if ($rawSizeName === "") {
                 return ["items" => [], "error" => "اختر المقاس المطلوب لكل صنف له مقاسات."];
@@ -440,10 +440,10 @@ function collectSalesInvoiceItems(array $categoryIds, array $sizeNames, array $q
                 return ["items" => [], "error" => "المقاس المحدد غير متاح للصنف المختار."];
             }
 
-            $selectedSizeName = $rawSizeName;
+            $invoiceItemSizeName = $rawSizeName;
         }
 
-        $itemUniqueKey = $categoryId . "|" . $selectedSizeName;
+        $itemUniqueKey = $categoryId . "|" . $invoiceItemSizeName;
         if (in_array($itemUniqueKey, $usedItemKeys, true)) {
             return ["items" => [], "error" => "لا يمكن تكرار نفس الصنف والمقاس داخل الفاتورة الواحدة."];
         }
@@ -456,7 +456,7 @@ function collectSalesInvoiceItems(array $categoryIds, array $sizeNames, array $q
         $items[] = [
             "category_id" => $categoryId,
             "category_name" => (string)$category["category_name"],
-            "size_name" => $selectedSizeName,
+            "size_name" => $invoiceItemSizeName,
             "pricing_type" => (string)$category["pricing_type"],
             "has_sizes" => ($category["has_sizes"] ?? false) === true,
             "quantity" => $quantity,
@@ -622,7 +622,8 @@ function applySalesInventoryImpact(array &$lockedCategories, $invoiceType, array
             }
 
             $lockedCategories[$categoryId]["sizes"][$sizeName]["quantity"] = $currentQuantity + $delta;
-            $lockedCategories[$categoryId]["quantity"] = calculateSalesSizeTotalQuantity($lockedCategories[$categoryId]["sizes"]);
+            $updatedCategoryQuantity = calculateSalesSizeTotalQuantity($lockedCategories[$categoryId]["sizes"]);
+            $lockedCategories[$categoryId]["quantity"] = $updatedCategoryQuantity;
             continue;
         }
 
@@ -1632,8 +1633,9 @@ document.addEventListener("DOMContentLoaded", function () {
         readSizes(selectedOption).forEach(function (sizeRow) {
             const sizeOption = document.createElement("option");
             sizeOption.value = sizeRow.size_name || "";
-            sizeOption.textContent = (sizeRow.size_name || "") + " — الرصيد: " + String(sizeRow.quantity ?? 0);
-            sizeOption.dataset.stock = String(sizeRow.quantity ?? 0);
+            const sizeQuantity = (sizeRow.quantity !== undefined && sizeRow.quantity !== null) ? sizeRow.quantity : 0;
+            sizeOption.textContent = (sizeRow.size_name || "") + " — الرصيد: " + String(sizeQuantity);
+            sizeOption.dataset.stock = String(sizeQuantity);
             sizeSelectElement.appendChild(sizeOption);
         });
 

@@ -247,6 +247,30 @@ function hasDuplicateCategorySizeNames(array $sizeRows)
     return count(array_unique($normalizedNames)) !== count($sizeRows);
 }
 
+function getCategorySizeRowsValidationError(array $sizeRows)
+{
+    if (count($sizeRows) === 0) {
+        return "أضف مقاسًا واحدًا على الأقل لهذا الصنف.";
+    }
+
+    if (hasDuplicateCategorySizeNames($sizeRows)) {
+        return "لا يمكن تكرار نفس المقاس داخل الصنف.";
+    }
+
+    foreach ($sizeRows as $sizeRow) {
+        $sizeName = trim((string)($sizeRow["size_name"] ?? ""));
+        if ($sizeName === "" || mb_strlen($sizeName) > 100 || ($sizeRow["quantity"] ?? "") === "") {
+            return "كل مقاس يجب أن يحتوي على اسم لا يتجاوز 100 حرف وعدد صحيح أكبر من صفر.";
+        }
+    }
+
+    if (getCategorySizesTotalQuantity($sizeRows) <= 0) {
+        return "إجمالي كميات المقاسات يجب أن يكون أكبر من صفر.";
+    }
+
+    return "";
+}
+
 function fetchCategorySizesByCategoryIds(PDO $pdo, array $categoryIds)
 {
     $categoryIds = array_values(array_unique(array_map("intval", $categoryIds)));
@@ -409,19 +433,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "اسم الصنف يجب ألا يتجاوز 150 حرفاً.";
             } elseif ($formData["price"] === "") {
                 $error = "السعر يجب أن يكون رقماً موجباً أو صفراً.";
-            } elseif ($formData["has_sizes"] && count($formData["sizes"]) === 0) {
-                $error = "أضف مقاسًا واحدًا على الأقل لهذا الصنف.";
-            } elseif ($formData["has_sizes"] && hasDuplicateCategorySizeNames($formData["sizes"])) {
-                $error = "لا يمكن تكرار نفس المقاس داخل الصنف.";
-            } elseif (
-                $formData["has_sizes"]
-                && count(array_filter($formData["sizes"], function ($sizeRow) {
-                    return trim((string)($sizeRow["size_name"] ?? "")) === ""
-                        || mb_strlen(trim((string)($sizeRow["size_name"] ?? ""))) > 100
-                        || ($sizeRow["quantity"] ?? "") === "";
-                })) > 0
-            ) {
-                $error = "كل مقاس يجب أن يحتوي على اسم لا يتجاوز 100 حرف وعدد صحيح أكبر من صفر.";
+            } elseif ($formData["has_sizes"]) {
+                $error = getCategorySizeRowsValidationError($formData["sizes"]);
             } elseif (
                 $formData["pricing_type"] === "price_with_quantity"
                 && !$formData["has_sizes"]
@@ -443,10 +456,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     : ($formData["pricing_type"] === "price_with_quantity"
                         ? (int)$formData["quantity"]
                         : null);
-
-                if ($formData["has_sizes"] && $quantityValue <= 0) {
-                    $error = "إجمالي كميات المقاسات يجب أن يكون أكبر من صفر.";
-                }
             }
 
             if ($error === "") {
