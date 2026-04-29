@@ -65,6 +65,27 @@ function fetchGameById(PDO $pdo, $gameId)
     return $row ?: null;
 }
 
+function grantCreatorAccessToGameBranch(PDO $pdo, $userId, $branchId, $gameId)
+{
+    $userId = (int)$userId;
+    $branchId = (int)$branchId;
+    $gameId = (int)$gameId;
+
+    if ($userId <= 0 || $branchId <= 0 || $gameId <= 0) {
+        return;
+    }
+
+    $grantBranchStmt = $pdo->prepare(
+        "INSERT IGNORE INTO user_branches (user_id, branch_id) VALUES (?, ?)"
+    );
+    $grantBranchStmt->execute([$userId, $branchId]);
+
+    $grantGameStmt = $pdo->prepare(
+        "INSERT IGNORE INTO user_games (user_id, game_id) VALUES (?, ?)"
+    );
+    $grantGameStmt->execute([$userId, $gameId]);
+}
+
 function gameNameTakenInBranch(PDO $pdo, $branchId, $name, $excludeId = 0)
 {
     if ((int)$excludeId > 0) {
@@ -203,6 +224,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             $formData["id"],
                         ]);
                         saveGameLevels($pdo, $formData["id"], $gameLevels);
+                        $editorId = (int)($_SESSION["user_id"] ?? 0);
+                        grantCreatorAccessToGameBranch($pdo, $editorId, $formData["branch_id"], $formData["id"]);
                         auditTrack(
                             $pdo,
                             "update",
@@ -213,6 +236,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         );
                         if ($currentGameId === $formData["id"]) {
                             $_SESSION["selected_game_name"] = $formData["name"];
+                            $_SESSION["selected_branch_id"] = (int)$formData["branch_id"];
+                            $_SESSION["selected_branch_name"] = (string)($allBranchesMap[$formData["branch_id"]]["name"] ?? "");
                         }
                         $_SESSION["games_success"] = "تم تحديث بيانات اللعبة ✅";
                     } else {
@@ -229,14 +254,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         $creatorId = (int)($_SESSION["user_id"] ?? 0);
                         if ($creatorId > 0 && $newGameId > 0) {
                             try {
-                                $grantBranchStmt = $pdo->prepare(
-                                    "INSERT IGNORE INTO user_branches (user_id, branch_id) VALUES (?, ?)"
-                                );
-                                $grantBranchStmt->execute([$creatorId, (int)$formData["branch_id"]]);
-                                $grantGameStmt = $pdo->prepare(
-                                    "INSERT IGNORE INTO user_games (user_id, game_id) VALUES (?, ?)"
-                                );
-                                $grantGameStmt->execute([$creatorId, $newGameId]);
+                                grantCreatorAccessToGameBranch($pdo, $creatorId, $formData["branch_id"], $newGameId);
                             } catch (Throwable $grantErr) {
                                 error_log("auto-grant new game to creator failed: " . $grantErr->getMessage());
                             }
@@ -592,7 +610,7 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                     <div class="form-group">
                         <label for="levels_text">مستويات اللعبة</label>
                         <textarea name="levels_text" id="levels_text" rows="6" placeholder="اكتب كل مستوى في سطر مستقل"><?php echo htmlspecialchars($formData["levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
-                        <small style="color:var(--text-soft,#6b7280);">سيتم استخدام هذه المستويات عند إضافة المجموعات وتسجيل اللاعبين وبوابة اللاعبين.</small>
+                        <small style="color:var(--text-soft,#6b7280);">يمكنك إدخال أكثر من مستوى، كل مستوى في سطر مستقل أو مفصول بفاصلة، وستظهر هذه المستويات داخل قائمة مستوى المجموعة.</small>
                     </div>
 
                     <button type="submit" class="btn btn-primary" <?php echo count($activeBranchOptions) === 0 ? "disabled" : ""; ?>>

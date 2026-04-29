@@ -57,6 +57,7 @@ function ensureGameLevelsTable(PDO $pdo)
 function normalizeGameLevelsInput($value)
 {
     $rawValue = str_replace(["\r\n", "\r"], "\n", (string)$value);
+    $rawValue = preg_replace('/[،,;]+/u', "\n", $rawValue);
     $lines = explode("\n", $rawValue);
     $levels = [];
     $seen = [];
