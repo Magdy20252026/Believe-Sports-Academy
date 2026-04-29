@@ -235,9 +235,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             "تعديل لعبة: " . $formData["name"]
                         );
                         if ($currentGameId === $formData["id"]) {
+                            $selectedBranch = $allBranchesMap[$formData["branch_id"]] ?? null;
                             $_SESSION["selected_game_name"] = $formData["name"];
-                            $_SESSION["selected_branch_id"] = (int)$formData["branch_id"];
-                            $_SESSION["selected_branch_name"] = (string)($allBranchesMap[$formData["branch_id"]]["name"] ?? "");
+                            if (is_array($selectedBranch)) {
+                                $_SESSION["selected_branch_id"] = (int)$selectedBranch["id"];
+                                $_SESSION["selected_branch_name"] = (string)$selectedBranch["name"];
+                            }
                         }
                         $_SESSION["games_success"] = "تم تحديث بيانات اللعبة ✅";
                     } else {
