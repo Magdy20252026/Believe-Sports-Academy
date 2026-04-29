@@ -456,7 +456,7 @@ function updateAdminPortalPassword(PDO $pdo, int $adminId, int $gameId, string $
             throw new RuntimeException("تعذر حفظ كلمة مرور الإداري.");
         }
 
-        error_log("Admins page warning: password update reported no changed rows for admin ID " . $adminId);
+        error_log("Admins page warning: password update reported no changed rows for an existing admin record.");
     }
 }
 

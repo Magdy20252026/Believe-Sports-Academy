@@ -479,7 +479,7 @@ function updateTrainerPortalPassword(PDO $pdo, int $trainerId, int $gameId, stri
             throw new RuntimeException("تعذر حفظ كلمة مرور المدرب.");
         }
 
-        error_log("Trainers page warning: password update reported no changed rows for trainer ID " . $trainerId);
+        error_log("Trainers page warning: password update reported no changed rows for an existing trainer record.");
     }
 }
 
