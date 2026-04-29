@@ -459,6 +459,30 @@ function logTrainerException(Throwable $throwable)
     error_log("Trainers page error: " . $throwable->getMessage());
 }
 
+function updateTrainerPortalPassword(PDO $pdo, int $trainerId, int $gameId, string $plainPassword)
+{
+    if ($plainPassword === "") {
+        return;
+    }
+
+    $hashedPassword = password_hash($plainPassword, PASSWORD_DEFAULT);
+    if ($hashedPassword === false) {
+        throw new RuntimeException("تعذر إنشاء كلمة مرور المدرب.");
+    }
+
+    $pwStmt = $pdo->prepare("UPDATE trainers SET password = ? WHERE id = ? AND game_id = ?");
+    $pwStmt->execute([$hashedPassword, $trainerId, $gameId]);
+    if ($pwStmt->rowCount() < 1) {
+        $existsStmt = $pdo->prepare("SELECT id FROM trainers WHERE id = ? AND game_id = ? LIMIT 1");
+        $existsStmt->execute([$trainerId, $gameId]);
+        if (!$existsStmt->fetchColumn()) {
+            throw new RuntimeException("تعذر حفظ كلمة مرور المدرب.");
+        }
+
+        error_log("Trainers page warning: password update reported no changed rows for an existing trainer record.");
+    }
+}
+
 if (!isset($_SESSION["trainers_csrf_token"])) {
     $_SESSION["trainers_csrf_token"] = bin2hex(random_bytes(32));
 }
@@ -541,8 +565,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "رقم الهاتف غير صحيح.";
             } elseif (isTrainerBarcodeTooLong($formData["barcode"])) {
                 $error = "باركود المدرب طويل جدًا.";
-            } elseif (count($formData["days_off"]) === 0) {
-                $error = "اختر يوم إجازة واحدًا على الأقل.";
             } elseif ($isManager && $formData["salary"] === "") {
                 $error = "الراتب مطلوب.";
             } elseif ($isManager && (!is_numeric($formData["salary"]) || (float)$formData["salary"] < 0)) {
@@ -646,16 +668,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             $formData["id"],
                             $currentGameId,
                         ]);
-                        if ($formData["password"] !== "") {
-                            $pwStmt = $pdo->prepare("UPDATE trainers SET password = ? WHERE id = ? AND game_id = ?");
-                            $pwStmt->execute([password_hash($formData["password"], PASSWORD_DEFAULT), $formData["id"], $currentGameId]);
-                        }
                         $trainerId = $formData["id"];
                     } else {
-                        $hashedPassword = $formData["password"] !== "" ? password_hash($formData["password"], PASSWORD_DEFAULT) : "";
                         $insertStmt = $pdo->prepare(
-                            "INSERT INTO trainers (game_id, name, phone, barcode, attendance_time, departure_time, salary, hourly_rate, password)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                            "INSERT INTO trainers (game_id, name, phone, barcode, attendance_time, departure_time, salary, hourly_rate)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
                         );
                         $insertStmt->execute([
                             $currentGameId,
@@ -666,10 +683,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             $defaultSchedule["departure_time"],
                             $salaryValue,
                             $hourlyRateValue,
-                            $hashedPassword,
                         ]);
                         $trainerId = (int)$pdo->lastInsertId();
                     }
+
+                    updateTrainerPortalPassword($pdo, $trainerId, $currentGameId, $formData["password"]);
 
                     $deleteDaysStmt = $pdo->prepare("DELETE FROM trainer_days_off WHERE trainer_id = ?");
                     $deleteDaysStmt->execute([$trainerId]);
@@ -950,6 +968,7 @@ $totalSalaryAmount = (float)($statsRow["total_salary"] ?? 0);
                     <div class="trainer-form-section">
                         <div class="trainer-section-heading">
                             <h4 class="trainer-section-title">أيام الإجازة</h4>
+                            <p class="trainer-section-subtitle">اختياري، ويمكن تركها بدون تحديد إذا كان المدرب يعمل طوال الأسبوع.</p>
                         </div>
                         <div class="form-group">
                             <div class="trainer-days-grid">

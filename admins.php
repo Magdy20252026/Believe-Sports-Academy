@@ -436,6 +436,30 @@ function logAdminException(Throwable $throwable)
     error_log("Admins page error: " . $throwable->getMessage());
 }
 
+function updateAdminPortalPassword(PDO $pdo, int $adminId, int $gameId, string $plainPassword)
+{
+    if ($plainPassword === "") {
+        return;
+    }
+
+    $hashedPassword = password_hash($plainPassword, PASSWORD_DEFAULT);
+    if ($hashedPassword === false) {
+        throw new RuntimeException("تعذر إنشاء كلمة مرور الإداري.");
+    }
+
+    $pwStmt = $pdo->prepare("UPDATE admins SET password = ? WHERE id = ? AND game_id = ?");
+    $pwStmt->execute([$hashedPassword, $adminId, $gameId]);
+    if ($pwStmt->rowCount() < 1) {
+        $existsStmt = $pdo->prepare("SELECT id FROM admins WHERE id = ? AND game_id = ? LIMIT 1");
+        $existsStmt->execute([$adminId, $gameId]);
+        if (!$existsStmt->fetchColumn()) {
+            throw new RuntimeException("تعذر حفظ كلمة مرور الإداري.");
+        }
+
+        error_log("Admins page warning: password update reported no changed rows for an existing admin record.");
+    }
+}
+
 if (!isset($_SESSION["admins_csrf_token"])) {
     $_SESSION["admins_csrf_token"] = bin2hex(random_bytes(32));
 }
@@ -515,8 +539,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "رقم الهاتف غير صحيح.";
             } elseif (isAdminBarcodeTooLong($formData["barcode"])) {
                 $error = "باركود الإداري طويل جدًا.";
-            } elseif (count($formData["days_off"]) === 0) {
-                $error = "اختر يوم إجازة واحدًا على الأقل.";
             } elseif ($isManager && $formData["salary"] === "") {
                 $error = "الراتب مطلوب.";
             } elseif ($isManager && (!is_numeric($formData["salary"]) || (float)$formData["salary"] < 0)) {
@@ -608,16 +630,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             $formData["id"],
                             $currentGameId,
                         ]);
-                        if ($formData["password"] !== "") {
-                            $pwStmt = $pdo->prepare("UPDATE admins SET password = ? WHERE id = ? AND game_id = ?");
-                            $pwStmt->execute([password_hash($formData["password"], PASSWORD_DEFAULT), $formData["id"], $currentGameId]);
-                        }
                         $adminId = $formData["id"];
                     } else {
-                        $hashedPassword = $formData["password"] !== "" ? password_hash($formData["password"], PASSWORD_DEFAULT) : "";
                         $insertStmt = $pdo->prepare(
-                            "INSERT INTO admins (game_id, name, phone, barcode, attendance_time, departure_time, salary, password)
-                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                            "INSERT INTO admins (game_id, name, phone, barcode, attendance_time, departure_time, salary)
+                             VALUES (?, ?, ?, ?, ?, ?, ?)"
                         );
                         $insertStmt->execute([
                             $currentGameId,
@@ -627,10 +644,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             $defaultSchedule["attendance_time"],
                             $defaultSchedule["departure_time"],
                             $salaryValue,
-                            $hashedPassword,
                         ]);
                         $adminId = (int)$pdo->lastInsertId();
                     }
+
+                    updateAdminPortalPassword($pdo, $adminId, $currentGameId, $formData["password"]);
 
                     $deleteDaysStmt = $pdo->prepare("DELETE FROM admin_days_off WHERE admin_id = ?");
                     $deleteDaysStmt->execute([$adminId]);
@@ -902,6 +920,7 @@ $totalSalaryAmount = (float)($statsRow["total_salary"] ?? 0);
                     <div class="trainer-form-section">
                         <div class="trainer-section-heading">
                             <h4 class="trainer-section-title">أيام الإجازة</h4>
+                            <p class="trainer-section-subtitle">اختياري، ويمكن تركها بدون تحديد إذا كان الإداري يعمل طوال الأسبوع.</p>
                         </div>
                         <div class="form-group">
                             <div class="trainer-days-grid">
