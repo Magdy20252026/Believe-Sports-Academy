@@ -144,27 +144,6 @@ function ensureBranchSchema(PDO $pdo)
         error_log("ensureBranchSchema add games composite unique failed: " . $e->getMessage());
     }
 
-    if ($primaryBranchId > 0 && $secondaryBranchId > 0) {
-        try {
-            $existingSecondaryStmt = $pdo->prepare("SELECT name FROM games WHERE branch_id = ?");
-            $existingSecondaryStmt->execute([$secondaryBranchId]);
-            $existingSecondaryNames = array_column($existingSecondaryStmt->fetchAll(), "name");
-
-            $primaryGamesStmt = $pdo->prepare("SELECT name, status FROM games WHERE branch_id = ? ORDER BY id ASC");
-            $primaryGamesStmt->execute([$primaryBranchId]);
-            $insertGameStmt = $pdo->prepare("INSERT INTO games (name, status, branch_id) VALUES (?, ?, ?)");
-            foreach ($primaryGamesStmt->fetchAll() as $primaryGame) {
-                $name = (string)$primaryGame["name"];
-                if ($name !== "" && !in_array($name, $existingSecondaryNames, true)) {
-                    $insertGameStmt->execute([$name, (int)$primaryGame["status"], $secondaryBranchId]);
-                    $existingSecondaryNames[] = $name;
-                }
-            }
-        } catch (PDOException $e) {
-            error_log("ensureBranchSchema duplicate games failed: " . $e->getMessage());
-        }
-    }
-
     try {
         $pdo->exec(
             "CREATE TABLE IF NOT EXISTS user_branches (

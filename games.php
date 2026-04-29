@@ -120,6 +120,7 @@ if (!isset($_SESSION["games_csrf_token"])) {
 ensureBranchSchema($pdo);
 ensureGamesAuditColumns($pdo);
 ensureGameLevelsTable($pdo);
+ensureGameGroupLevelsTable($pdo);
 
 $success = "";
 $error = "";
@@ -157,6 +158,7 @@ $formData = [
     "branch_id" => $currentBranchId > 0 && isset($allBranchesMap[$currentBranchId]) ? $currentBranchId : 0,
     "status" => 1,
     "levels_text" => "",
+    "group_levels_text" => "",
 ];
 
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
@@ -174,8 +176,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 "branch_id" => (int)($_POST["branch_id"] ?? 0),
                 "status" => ((int)($_POST["status"] ?? 1) === 0) ? 0 : 1,
                 "levels_text" => trim((string)($_POST["levels_text"] ?? "")),
+                "group_levels_text" => trim((string)($_POST["group_levels_text"] ?? "")),
             ];
             $gameLevels = normalizeGameLevelsInput($formData["levels_text"]);
+            $gameGroupLevels = normalizeGameLevelsInput($formData["group_levels_text"]);
 
             if ($formData["name"] === "") {
                 $error = "اسم اللعبة مطلوب.";
@@ -189,6 +193,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "هذه اللعبة موجودة بالفعل في هذا الفرع.";
             } elseif ($formData["levels_text"] !== "" && count($gameLevels) === 0) {
                 $error = "مستويات اللعبة غير صالحة.";
+            } elseif ($formData["group_levels_text"] !== "" && count($gameGroupLevels) === 0) {
+                $error = "مستويات المجموعات غير صالحة.";
             } else {
                 try {
                     $pdo->beginTransaction();
@@ -203,6 +209,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             $formData["id"],
                         ]);
                         saveGameLevels($pdo, $formData["id"], $gameLevels);
+                        saveGameGroupLevels($pdo, $formData["id"], $gameGroupLevels);
                         auditTrack(
                             $pdo,
                             "update",
@@ -226,6 +233,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         ]);
                         $newGameId = (int)$pdo->lastInsertId();
                         saveGameLevels($pdo, $newGameId, $gameLevels);
+                        saveGameGroupLevels($pdo, $newGameId, $gameGroupLevels);
                         $creatorId = (int)($_SESSION["user_id"] ?? 0);
                         if ($creatorId > 0 && $newGameId > 0) {
                             try {
@@ -353,6 +361,7 @@ if ($editId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
             "branch_id" => (int)($editGame["branch_id"] ?? 0),
             "status" => (int)$editGame["status"],
             "levels_text" => implode(PHP_EOL, fetchGameLevels($pdo, (int)$editGame["id"])),
+            "group_levels_text" => implode(PHP_EOL, fetchGameGroupLevels($pdo, (int)$editGame["id"])),
         ];
     }
 }
@@ -365,6 +374,7 @@ $gamesStmt = $pdo->query(
 );
 $games = $gamesStmt->fetchAll();
 $gameLevelsByGame = fetchGameLevelsGrouped($pdo);
+$gameGroupLevelsByGame = fetchGameGroupLevelsGrouped($pdo);
 
 $totalGames = count($games);
 $activeGames = 0;
@@ -592,7 +602,13 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                     <div class="form-group">
                         <label for="levels_text">مستويات اللعبة</label>
                         <textarea name="levels_text" id="levels_text" rows="6" placeholder="اكتب كل مستوى في سطر مستقل"><?php echo htmlspecialchars($formData["levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
-                        <small style="color:var(--text-soft,#6b7280);">سيتم استخدام هذه المستويات عند إضافة المجموعات وتسجيل اللاعبين وبوابة اللاعبين.</small>
+                        <small style="color:var(--text-soft,#6b7280);">هذه المستويات تبقى خاصة باللعبة واللاعبين وبوابة اللاعبين.</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="group_levels_text">مستويات المجموعات</label>
+                        <textarea name="group_levels_text" id="group_levels_text" rows="6" placeholder="اكتب كل مستوى مجموعة في سطر مستقل"><?php echo htmlspecialchars($formData["group_levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
+                        <small style="color:var(--text-soft,#6b7280);">سيتم استخدام هذه المستويات فقط داخل صفحة المجموعات في قائمة مستوى المجموعة.</small>
                     </div>
 
                     <button type="submit" class="btn btn-primary" <?php echo count($activeBranchOptions) === 0 ? "disabled" : ""; ?>>
@@ -622,17 +638,19 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                             <tr>
                                 <th>اللعبة</th>
                                 <th>الفرع</th>
-                                <th>المستويات</th>
+                                <th>مستويات اللعبة</th>
+                                <th>مستويات المجموعات</th>
                                 <th>الحالة</th>
                                 <th>الإجراءات</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php if ($totalGames === 0): ?>
-                                <tr><td colspan="5" class="empty-cell">لا توجد ألعاب مُسجّلة بعد.</td></tr>
+                                <tr><td colspan="6" class="empty-cell">لا توجد ألعاب مُسجّلة بعد.</td></tr>
                             <?php else: ?>
                                 <?php foreach ($games as $game): $gameId = (int)$game["id"]; ?>
                                     <?php $gameLevels = $gameLevelsByGame[$gameId] ?? []; ?>
+                                    <?php $gameGroupLevels = $gameGroupLevelsByGame[$gameId] ?? []; ?>
                                     <tr>
                                         <td data-label="اللعبة">
                                             <strong><?php echo htmlspecialchars($game["name"], ENT_QUOTES, "UTF-8"); ?></strong>
@@ -651,6 +669,17 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                                             <?php else: ?>
                                                 <div class="games-levels-list">
                                                     <?php foreach ($gameLevels as $levelName): ?>
+                                                        <span class="games-level-chip"><?php echo htmlspecialchars($levelName, ENT_QUOTES, "UTF-8"); ?></span>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td data-label="مستويات المجموعات">
+                                            <?php if (count($gameGroupLevels) === 0): ?>
+                                                <span style="color:var(--text-soft,#6b7280);">—</span>
+                                            <?php else: ?>
+                                                <div class="games-levels-list">
+                                                    <?php foreach ($gameGroupLevels as $levelName): ?>
                                                         <span class="games-level-chip"><?php echo htmlspecialchars($levelName, ENT_QUOTES, "UTF-8"); ?></span>
                                                     <?php endforeach; ?>
                                                 </div>
