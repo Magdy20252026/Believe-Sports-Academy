@@ -450,7 +450,11 @@ function updateAdminPortalPassword(PDO $pdo, int $adminId, int $gameId, string $
     $pwStmt = $pdo->prepare("UPDATE admins SET password = ? WHERE id = ? AND game_id = ?");
     $pwStmt->execute([$hashedPassword, $adminId, $gameId]);
     if ($pwStmt->rowCount() < 1) {
-        throw new RuntimeException("تعذر حفظ كلمة مرور الإداري.");
+        $existsStmt = $pdo->prepare("SELECT id FROM admins WHERE id = ? AND game_id = ? LIMIT 1");
+        $existsStmt->execute([$adminId, $gameId]);
+        if (!$existsStmt->fetchColumn()) {
+            throw new RuntimeException("تعذر حفظ كلمة مرور الإداري.");
+        }
     }
 }
 
