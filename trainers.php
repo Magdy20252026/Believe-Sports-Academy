@@ -472,6 +472,9 @@ function updateTrainerPortalPassword(PDO $pdo, int $trainerId, int $gameId, stri
 
     $pwStmt = $pdo->prepare("UPDATE trainers SET password = ? WHERE id = ? AND game_id = ?");
     $pwStmt->execute([$hashedPassword, $trainerId, $gameId]);
+    if ($pwStmt->rowCount() < 1) {
+        throw new RuntimeException("تعذر حفظ كلمة مرور المدرب.");
+    }
 }
 
 if (!isset($_SESSION["trainers_csrf_token"])) {
