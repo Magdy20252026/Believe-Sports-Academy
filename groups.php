@@ -553,7 +553,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif (count($formData["training_day_keys"]) !== (int)$formData["training_days_count"]) {
                 $error = "يجب تحديد " . (int)$formData["training_days_count"] . " يوم تمرين للمجموعة.";
             } elseif (count($formData["training_day_times"]) !== count($formData["training_day_keys"])) {
-                $error = "يجب إدخال وقت صحيح بنظام 12 ساعة لكل يوم من أيام التمرين المحددة.";
+                $error = "يجب إدخال الساعة والدقيقة والفترة (ص/م) بشكل صحيح لكل يوم من أيام التمرين المحددة.";
             } elseif ($formData["trainings_count"] === "") {
                 $error = "إجمالي عدد أيام التمرين غير صحيح.";
             } elseif ($formData["exercises_count"] === "") {
