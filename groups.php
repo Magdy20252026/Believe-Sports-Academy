@@ -20,10 +20,13 @@ function ensureSportsGroupsTable(PDO $pdo)
             training_days_count INT(11) NOT NULL DEFAULT 1,
             training_day_keys VARCHAR(255) NOT NULL DEFAULT '',
             training_time TIME NULL DEFAULT NULL,
+            training_day_times LONGTEXT NULL DEFAULT NULL,
             trainings_count INT(11) NOT NULL DEFAULT 1,
             exercises_count INT(11) NOT NULL DEFAULT 1,
             max_players INT(11) NOT NULL DEFAULT 1,
             trainer_name VARCHAR(150) NOT NULL,
+            assistant_trainer_name VARCHAR(150) NOT NULL DEFAULT '',
+            ballet_trainer_name VARCHAR(150) NOT NULL DEFAULT '',
             academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00,
             walkers_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
             other_weapons_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -40,10 +43,13 @@ function ensureSportsGroupsTable(PDO $pdo)
         "training_days_count" => "ALTER TABLE sports_groups ADD COLUMN training_days_count INT(11) NOT NULL DEFAULT 1 AFTER group_level",
         "training_day_keys" => "ALTER TABLE sports_groups ADD COLUMN training_day_keys VARCHAR(255) NOT NULL DEFAULT '' AFTER training_days_count",
         "training_time" => "ALTER TABLE sports_groups ADD COLUMN training_time TIME NULL DEFAULT NULL AFTER training_day_keys",
-        "trainings_count" => "ALTER TABLE sports_groups ADD COLUMN trainings_count INT(11) NOT NULL DEFAULT 1 AFTER training_time",
+        "training_day_times" => "ALTER TABLE sports_groups ADD COLUMN training_day_times LONGTEXT NULL DEFAULT NULL AFTER training_time",
+        "trainings_count" => "ALTER TABLE sports_groups ADD COLUMN trainings_count INT(11) NOT NULL DEFAULT 1 AFTER training_day_times",
         "exercises_count" => "ALTER TABLE sports_groups ADD COLUMN exercises_count INT(11) NOT NULL DEFAULT 1 AFTER trainings_count",
         "max_players" => "ALTER TABLE sports_groups ADD COLUMN max_players INT(11) NOT NULL DEFAULT 1 AFTER exercises_count",
-        "academy_percentage" => "ALTER TABLE sports_groups ADD COLUMN academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER trainer_name",
+        "assistant_trainer_name" => "ALTER TABLE sports_groups ADD COLUMN assistant_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER trainer_name",
+        "ballet_trainer_name" => "ALTER TABLE sports_groups ADD COLUMN ballet_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER assistant_trainer_name",
+        "academy_percentage" => "ALTER TABLE sports_groups ADD COLUMN academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER ballet_trainer_name",
     ];
 
     $existingColumnsStmt = $pdo->prepare(
@@ -189,6 +195,204 @@ function getGroupTrainerName(PDO $pdo, $gameId, $groupId)
     return $trainerName === false ? "" : trim((string)$trainerName);
 }
 
+function getGroupTrainerAssignments(PDO $pdo, $gameId, $groupId)
+{
+    $stmt = $pdo->prepare(
+        "SELECT trainer_name, assistant_trainer_name, ballet_trainer_name
+         FROM sports_groups
+         WHERE id = ? AND game_id = ?
+         LIMIT 1"
+    );
+    $stmt->execute([(int)$groupId, (int)$gameId]);
+    $group = $stmt->fetch();
+
+    return [
+        "trainer_name" => trim((string)($group["trainer_name"] ?? "")),
+        "assistant_trainer_name" => trim((string)($group["assistant_trainer_name"] ?? "")),
+        "ballet_trainer_name" => trim((string)($group["ballet_trainer_name"] ?? "")),
+    ];
+}
+
+function isGymnasticsGame($gameName)
+{
+    $gameNameWithoutWhitespace = preg_replace('/\s+/u', '', trim((string)$gameName));
+    return $gameNameWithoutWhitespace !== '' && preg_match('/جمباز/u', $gameNameWithoutWhitespace) === 1;
+}
+
+function convertGroup24HourTimeToParts($time)
+{
+    $normalizedTime = normalizeTrainingTimeValue($time);
+    if ($normalizedTime === '') {
+        return [
+            "hour" => "",
+            "minute" => "",
+            "period" => "AM",
+        ];
+    }
+
+    [$hour, $minute] = array_map('intval', explode(':', substr($normalizedTime, 0, 5)));
+    $period = $hour >= 12 ? 'PM' : 'AM';
+    $displayHour = $hour % 12;
+    if ($displayHour === 0) {
+        $displayHour = 12;
+    }
+
+    return [
+        "hour" => str_pad((string)$displayHour, 2, '0', STR_PAD_LEFT),
+        "minute" => str_pad((string)$minute, 2, '0', STR_PAD_LEFT),
+        "period" => $period,
+    ];
+}
+
+function convertGroup12HourPartsTo24Hour($hour, $minute, $period)
+{
+    $hour = trim((string)$hour);
+    $minute = trim((string)$minute);
+    $period = strtoupper(trim((string)$period));
+
+    if (
+        $hour === ''
+        || $minute === ''
+        || preg_match('/^\d{1,2}$/', $hour) !== 1
+        || preg_match('/^\d{1,2}$/', $minute) !== 1
+        || !in_array($period, ['AM', 'PM'], true)
+    ) {
+        return '';
+    }
+
+    $hour = (int)$hour;
+    $minute = (int)$minute;
+    if ($hour < 1 || $hour > 12 || $minute < 0 || $minute > 59) {
+        return '';
+    }
+
+    if ($period === 'AM') {
+        $hour = $hour === 12 ? 0 : $hour;
+    } else {
+        $hour = $hour === 12 ? 12 : $hour + 12;
+    }
+
+    return str_pad((string)$hour, 2, '0', STR_PAD_LEFT)
+        . ':'
+        . str_pad((string)$minute, 2, '0', STR_PAD_LEFT)
+        . ':00';
+}
+
+function decodeGroupTrainingDayTimes($storedValue, array $selectedDayKeys = [], $fallbackTime = '')
+{
+    $dayTimes = [];
+    $decodedValue = json_decode((string)$storedValue, true);
+    if (is_array($decodedValue)) {
+        foreach ($decodedValue as $dayKey => $timeValue) {
+            $dayKey = trim((string)$dayKey);
+            $normalizedTime = normalizeTrainingTimeValue($timeValue);
+            if ($dayKey !== '' && isset(PLAYER_DAY_OPTIONS[$dayKey]) && $normalizedTime !== '') {
+                $dayTimes[$dayKey] = $normalizedTime;
+            }
+        }
+    }
+
+    $selectedDayKeys = sanitizePlayerTrainingDayKeys($selectedDayKeys);
+    if (count($dayTimes) === 0) {
+        $fallbackTime = normalizeTrainingTimeValue($fallbackTime);
+        if ($fallbackTime !== '' && count($selectedDayKeys) > 0) {
+            foreach ($selectedDayKeys as $dayKey) {
+                $dayTimes[$dayKey] = $fallbackTime;
+            }
+        }
+    }
+
+    if (count($selectedDayKeys) > 0) {
+        $filteredDayTimes = [];
+        foreach ($selectedDayKeys as $dayKey) {
+            if (isset($dayTimes[$dayKey])) {
+                $filteredDayTimes[$dayKey] = $dayTimes[$dayKey];
+            }
+        }
+        return $filteredDayTimes;
+    }
+
+    return $dayTimes;
+}
+
+function normalizeGroupTrainingDayTimes(array $submittedTimes, array $selectedDayKeys)
+{
+    $normalizedTimes = [];
+    foreach ($selectedDayKeys as $dayKey) {
+        if (!isset(PLAYER_DAY_OPTIONS[$dayKey])) {
+            continue;
+        }
+
+        $dayPayload = isset($submittedTimes[$dayKey]) && is_array($submittedTimes[$dayKey])
+            ? $submittedTimes[$dayKey]
+            : [];
+        $normalizedTime = convertGroup12HourPartsTo24Hour(
+            $dayPayload['hour'] ?? '',
+            $dayPayload['minute'] ?? '',
+            $dayPayload['period'] ?? ''
+        );
+        if ($normalizedTime !== '') {
+            $normalizedTimes[$dayKey] = $normalizedTime;
+        }
+    }
+
+    return $normalizedTimes;
+}
+
+function buildGroupTrainingDayTimesFormData(array $dayTimes)
+{
+    $formDayTimes = [];
+    foreach ($dayTimes as $dayKey => $timeValue) {
+        if (!isset(PLAYER_DAY_OPTIONS[$dayKey])) {
+            continue;
+        }
+        $formDayTimes[$dayKey] = convertGroup24HourTimeToParts($timeValue);
+    }
+
+    return $formDayTimes;
+}
+
+function encodeGroupTrainingDayTimes(array $dayTimes)
+{
+    if (count($dayTimes) === 0) {
+        return null;
+    }
+
+    return json_encode($dayTimes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}
+
+function getPrimaryGroupTrainingTime(array $selectedDayKeys, array $dayTimes)
+{
+    foreach ($selectedDayKeys as $dayKey) {
+        if (isset($dayTimes[$dayKey])) {
+            return $dayTimes[$dayKey];
+        }
+    }
+
+    return '';
+}
+
+function formatGroupTrainingScheduleLabels(array $selectedDayKeys, array $dayTimes)
+{
+    $labels = [];
+    foreach ($selectedDayKeys as $dayKey) {
+        if (!isset(PLAYER_DAY_OPTIONS[$dayKey])) {
+            continue;
+        }
+
+        $dayLabel = PLAYER_DAY_OPTIONS[$dayKey];
+        $timeLabel = formatTrainingTimeDisplay($dayTimes[$dayKey] ?? '');
+        if ($timeLabel === '') {
+            $labels[] = $dayLabel;
+            continue;
+        }
+
+        $labels[] = $dayLabel . ': ' . $timeLabel;
+    }
+
+    return $labels;
+}
+
 function groupDuplicateExists(PDO $pdo, $gameId, $groupName, $groupLevel, $groupId = 0)
 {
     $sql = (int)$groupId > 0
@@ -216,6 +420,7 @@ $success = "";
 $error = "";
 $currentGameId = (int)($_SESSION["selected_game_id"] ?? 0);
 $currentGameName = (string)($_SESSION["selected_game_name"] ?? "");
+$isGymnasticsGame = isGymnasticsGame($currentGameName);
 
 $settingsStmt = $pdo->query("SELECT * FROM settings ORDER BY id DESC LIMIT 1");
 $settings = $settingsStmt->fetch();
@@ -268,10 +473,13 @@ $formData = [
     "training_days_count" => "",
     "training_day_keys" => [],
     "training_time" => "",
+    "training_day_times" => [],
     "trainings_count" => "",
     "exercises_count" => "",
     "max_players" => "",
     "trainer_name" => "",
+    "assistant_trainer_name" => "",
+    "ballet_trainer_name" => "",
     "academy_percentage" => "",
     "walkers_price" => "",
     "other_weapons_price" => "",
@@ -299,22 +507,35 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 "group_level" => trim((string)($_POST["group_level"] ?? "")),
                 "training_days_count" => normalizeGroupCountValue($_POST["training_days_count"] ?? ""),
                 "training_day_keys" => sanitizePlayerTrainingDayKeys($_POST["training_day_keys"] ?? []),
-                "training_time" => normalizeTrainingTimeValue($_POST["training_time"] ?? ""),
+                "training_day_times" => [],
+                "training_time" => "",
                 "trainings_count" => normalizeGroupCountValue($_POST["trainings_count"] ?? ""),
                 "exercises_count" => normalizeGroupCountValue($_POST["exercises_count"] ?? ""),
                 "max_players" => normalizeGroupCountValue($_POST["max_players"] ?? ""),
                 "trainer_name" => trim((string)($_POST["trainer_name"] ?? "")),
+                "assistant_trainer_name" => trim((string)($_POST["assistant_trainer_name"] ?? "")),
+                "ballet_trainer_name" => trim((string)($_POST["ballet_trainer_name"] ?? "")),
                 "academy_percentage" => normalizeGroupPercentageValue($_POST["academy_percentage"] ?? ""),
                 "walkers_price" => normalizeGroupPriceValue($_POST["walkers_price"] ?? ""),
                 "other_weapons_price" => normalizeGroupPriceValue($_POST["other_weapons_price"] ?? ""),
                 "civilian_price" => normalizeGroupPriceValue($_POST["civilian_price"] ?? ""),
             ];
+            $formData["training_day_times"] = normalizeGroupTrainingDayTimes(
+                $_POST["training_day_times"] ?? [],
+                $formData["training_day_keys"]
+            );
+            $formData["training_time"] = getPrimaryGroupTrainingTime(
+                $formData["training_day_keys"],
+                $formData["training_day_times"]
+            );
 
             $trainerValidationOptions = $trainerSuggestions;
             if ($formData["id"] > 0) {
-                $existingTrainerName = getGroupTrainerName($pdo, $currentGameId, $formData["id"]);
-                if ($existingTrainerName !== "" && !in_array($existingTrainerName, $trainerValidationOptions, true)) {
-                    $trainerValidationOptions[] = $existingTrainerName;
+                $existingTrainerAssignments = getGroupTrainerAssignments($pdo, $currentGameId, $formData["id"]);
+                foreach ($existingTrainerAssignments as $existingTrainerName) {
+                    if ($existingTrainerName !== "" && !in_array($existingTrainerName, $trainerValidationOptions, true)) {
+                        $trainerValidationOptions[] = $existingTrainerName;
+                    }
                 }
             }
 
@@ -328,8 +549,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "عدد أيام التمرين خلال الأسبوع غير صحيح.";
             } elseif (count($formData["training_day_keys"]) !== (int)$formData["training_days_count"]) {
                 $error = "يجب تحديد " . (int)$formData["training_days_count"] . " يوم تمرين للمجموعة.";
-            } elseif ($formData["training_time"] === "") {
-                $error = "ميعاد التمرين غير صحيح.";
+            } elseif (count($formData["training_day_times"]) !== count($formData["training_day_keys"])) {
+                $error = "يجب إدخال الساعة والدقيقة والفترة (ص/م) بشكل صحيح لكل يوم من أيام التمرين المحددة.";
             } elseif ($formData["trainings_count"] === "") {
                 $error = "إجمالي عدد أيام التمرين غير صحيح.";
             } elseif ($formData["exercises_count"] === "") {
@@ -340,6 +561,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "اسم المدرب مطلوب.";
             } elseif (!in_array($formData["trainer_name"], $trainerValidationOptions, true)) {
                 $error = "المدرب المحدد غير متاح.";
+            } elseif (
+                $formData["assistant_trainer_name"] !== ""
+                && !in_array($formData["assistant_trainer_name"], $trainerValidationOptions, true)
+            ) {
+                $error = "المدرب المساعد المحدد غير متاح.";
+            } elseif (!$isGymnasticsGame && $formData["ballet_trainer_name"] !== "") {
+                $error = "مدرب البالية متاح لمجموعات الجمباز فقط.";
+            } elseif (
+                $formData["ballet_trainer_name"] !== ""
+                && !in_array($formData["ballet_trainer_name"], $trainerValidationOptions, true)
+            ) {
+                $error = "مدرب البالية المحدد غير متاح.";
             } elseif ($formData["academy_percentage"] === "") {
                 $error = "نسبة الأكاديمية يجب أن تكون من 0 إلى 100.";
             } elseif ($formData["walkers_price"] === "") {
@@ -355,14 +588,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif ($formData["id"] > 0 && countPlayersInGroup($pdo, $currentGameId, $formData["id"], 0) > (int)$formData["max_players"]) {
                 $error = "الحد الأقصى للاعبين لا يمكن أن يكون أقل من عدد اللاعبين الحاليين بالمجموعة.";
             } else {
+                if (!$isGymnasticsGame) {
+                    $formData["ballet_trainer_name"] = "";
+                }
                 $trainingDayValue = implode(PLAYER_DAY_SEPARATOR, $formData["training_day_keys"]);
+                $trainingDayTimesValue = encodeGroupTrainingDayTimes($formData["training_day_times"]);
                 try {
                     if ($formData["id"] > 0) {
                         $updateStmt = $pdo->prepare(
                             "UPDATE sports_groups
-                             SET group_name = ?, group_level = ?, training_days_count = ?, training_day_keys = ?, training_time = ?, trainings_count = ?, exercises_count = ?, max_players = ?, trainer_name = ?,
-                                  academy_percentage = ?, walkers_price = ?, other_weapons_price = ?, civilian_price = ?
-                              WHERE id = ? AND game_id = ?"
+                             SET group_name = ?, group_level = ?, training_days_count = ?, training_day_keys = ?, training_time = ?, training_day_times = ?, trainings_count = ?, exercises_count = ?, max_players = ?, trainer_name = ?,
+                                  assistant_trainer_name = ?, ballet_trainer_name = ?, academy_percentage = ?, walkers_price = ?, other_weapons_price = ?, civilian_price = ?
+                             WHERE id = ? AND game_id = ?"
                         );
                         $updateStmt->execute([
                             $formData["group_name"],
@@ -370,10 +607,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             (int)$formData["training_days_count"],
                             $trainingDayValue,
                             $formData["training_time"],
+                            $trainingDayTimesValue,
                             (int)$formData["trainings_count"],
                             (int)$formData["exercises_count"],
                             (int)$formData["max_players"],
                             $formData["trainer_name"],
+                            $formData["assistant_trainer_name"],
+                            $formData["ballet_trainer_name"],
                             $formData["academy_percentage"],
                             $formData["walkers_price"],
                             $formData["other_weapons_price"],
@@ -386,9 +626,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     } else {
                         $insertStmt = $pdo->prepare(
                             "INSERT INTO sports_groups (
-                                game_id, group_name, group_level, training_days_count, training_day_keys, training_time, trainings_count,
-                                exercises_count, max_players, trainer_name, academy_percentage, walkers_price, other_weapons_price, civilian_price
-                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                game_id, group_name, group_level, training_days_count, training_day_keys, training_time, training_day_times, trainings_count,
+                                exercises_count, max_players, trainer_name, assistant_trainer_name, ballet_trainer_name, academy_percentage, walkers_price, other_weapons_price, civilian_price
+                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                         );
                         $insertStmt->execute([
                             $currentGameId,
@@ -397,10 +637,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             (int)$formData["training_days_count"],
                             $trainingDayValue,
                             $formData["training_time"],
+                            $trainingDayTimesValue,
                             (int)$formData["trainings_count"],
                             (int)$formData["exercises_count"],
                             (int)$formData["max_players"],
                             $formData["trainer_name"],
+                            $formData["assistant_trainer_name"],
+                            $formData["ballet_trainer_name"],
                             $formData["academy_percentage"],
                             $formData["walkers_price"],
                             $formData["other_weapons_price"],
@@ -448,8 +691,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 $editGroupId = (int)($_GET["edit"] ?? 0);
 if ($editGroupId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
     $editStmt = $pdo->prepare(
-        "SELECT id, group_name, group_level, training_days_count, training_day_keys, training_time, trainings_count, exercises_count, max_players, trainer_name, academy_percentage,
-                walkers_price, other_weapons_price, civilian_price
+        "SELECT id, group_name, group_level, training_days_count, training_day_keys, training_time, training_day_times, trainings_count, exercises_count, max_players, trainer_name,
+                assistant_trainer_name, ballet_trainer_name, academy_percentage, walkers_price, other_weapons_price, civilian_price
          FROM sports_groups
          WHERE id = ? AND game_id = ?
          LIMIT 1"
@@ -464,33 +707,50 @@ if ($editGroupId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
             "group_level" => (string)$editGroup["group_level"],
             "training_days_count" => (string)(int)$editGroup["training_days_count"],
             "training_day_keys" => getPlayerTrainingDayKeys($editGroup["training_day_keys"] ?? ""),
+            "training_day_times" => decodeGroupTrainingDayTimes(
+                $editGroup["training_day_times"] ?? "",
+                getPlayerTrainingDayKeys($editGroup["training_day_keys"] ?? ""),
+                $editGroup["training_time"] ?? ""
+            ),
             "training_time" => formatTrainingTimeLabel($editGroup["training_time"] ?? ""),
             "trainings_count" => (string)(int)$editGroup["trainings_count"],
             "exercises_count" => (string)(int)$editGroup["exercises_count"],
             "max_players" => (string)(int)$editGroup["max_players"],
             "trainer_name" => (string)$editGroup["trainer_name"],
+            "assistant_trainer_name" => (string)($editGroup["assistant_trainer_name"] ?? ""),
+            "ballet_trainer_name" => (string)($editGroup["ballet_trainer_name"] ?? ""),
             "academy_percentage" => number_format((float)$editGroup["academy_percentage"], 2, ".", ""),
             "walkers_price" => number_format((float)$editGroup["walkers_price"], 2, ".", ""),
             "other_weapons_price" => number_format((float)$editGroup["other_weapons_price"], 2, ".", ""),
             "civilian_price" => number_format((float)$editGroup["civilian_price"], 2, ".", ""),
         ];
+        $formData["training_time"] = formatTrainingTimeLabel(
+            getPrimaryGroupTrainingTime($formData["training_day_keys"], $formData["training_day_times"])
+        );
     }
 }
 
 $trainerSelectOptions = $trainerSuggestions;
-if (
-    $formData["trainer_name"] !== ""
-    && !in_array($formData["trainer_name"], $trainerSelectOptions, true)
-) {
-    $trainerSelectOptions[] = $formData["trainer_name"];
-    sort($trainerSelectOptions, SORT_NATURAL);
+$trainerFieldNames = ["trainer_name", "assistant_trainer_name"];
+if ($isGymnasticsGame) {
+    $trainerFieldNames[] = "ballet_trainer_name";
 }
+foreach ($trainerFieldNames as $trainerFieldName) {
+    if (
+        $formData[$trainerFieldName] !== ""
+        && !in_array($formData[$trainerFieldName], $trainerSelectOptions, true)
+    ) {
+        $trainerSelectOptions[] = $formData[$trainerFieldName];
+    }
+}
+sort($trainerSelectOptions, SORT_NATURAL);
 $hasTrainerOptions = count($trainerSelectOptions) > 0;
+$initialTrainingDayTimeParts = buildGroupTrainingDayTimesFormData($formData["training_day_times"]);
 
 $groupPlayerCounts = fetchGroupPlayerCounts($pdo, $currentGameId);
 $groupsStmt = $pdo->prepare(
-    "SELECT id, group_name, group_level, training_days_count, training_day_keys, training_time, trainings_count, exercises_count, max_players, trainer_name,
-            academy_percentage, walkers_price, other_weapons_price, civilian_price, created_at, updated_at, created_by_user_id, updated_by_user_id
+    "SELECT id, group_name, group_level, training_days_count, training_day_keys, training_time, training_day_times, trainings_count, exercises_count, max_players, trainer_name,
+            assistant_trainer_name, ballet_trainer_name, academy_percentage, walkers_price, other_weapons_price, civilian_price, created_at, updated_at, created_by_user_id, updated_by_user_id
      FROM sports_groups
      WHERE game_id = ?
      ORDER BY group_level ASC, group_name ASC, id DESC"
@@ -500,6 +760,14 @@ $groups = $groupsStmt->fetchAll();
 foreach ($groups as &$group) {
     $group["current_players_count"] = $groupPlayerCounts[(int)$group["id"]] ?? 0;
     $group["training_day_labels"] = formatPlayerTrainingDaysLabel(getPlayerTrainingDayKeys($group["training_day_keys"] ?? ""));
+    $group["training_schedule_labels"] = formatGroupTrainingScheduleLabels(
+        getPlayerTrainingDayKeys($group["training_day_keys"] ?? ""),
+        decodeGroupTrainingDayTimes(
+            $group["training_day_times"] ?? "",
+            getPlayerTrainingDayKeys($group["training_day_keys"] ?? ""),
+            $group["training_time"] ?? ""
+        )
+    );
     $group["training_time_label"] = formatTrainingTimeDisplay($group["training_time"] ?? "");
 }
 unset($group);
@@ -606,9 +874,10 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
                             <div class="trainer-days-grid player-days-grid" id="groupTrainingDaysContainer"></div>
                         </div>
 
-                        <div class="form-group">
-                            <label for="training_time">ميعاد التمرين</label>
-                            <input type="time" name="training_time" id="training_time" value="<?php echo htmlspecialchars($formData["training_time"], ENT_QUOTES, 'UTF-8'); ?>" required>
+                        <div class="form-group group-field-full">
+                            <label>مواعيد التمرين لكل يوم</label>
+                            <p class="form-helper-text" id="groupTrainingTimesHelper">سجّل الميعاد بنظام 12 ساعة لكل يوم تدريب محدد.</p>
+                            <div class="groups-form-grid" id="groupTrainingTimesContainer"></div>
                         </div>
 
                         <div class="form-group">
@@ -627,7 +896,7 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
                         </div>
 
                         <div class="form-group group-field-full">
-                            <label for="trainer_name">المدرب</label>
+                            <label for="trainer_name">المدرب الأساسي</label>
                             <div class="select-shell trainer-select-shell">
                                 <select name="trainer_name" id="trainer_name" class="group-trainer-select" aria-label="<?php echo htmlspecialchars($trainerSelectAriaLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $hasTrainerOptions ? "required" : "disabled"; ?>>
                                     <option value=""><?php echo $hasTrainerOptions ? "اختر المدرب" : "لا يوجد مدرب متاح"; ?></option>
@@ -639,6 +908,36 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
                                 </select>
                             </div>
                         </div>
+
+                        <div class="form-group group-field-full">
+                            <label for="assistant_trainer_name">المدرب المساعد</label>
+                            <div class="select-shell trainer-select-shell">
+                                <select name="assistant_trainer_name" id="assistant_trainer_name" class="group-trainer-select" <?php echo !$hasTrainerOptions ? "disabled" : ""; ?>>
+                                    <option value="">اختياري</option>
+                                    <?php foreach ($trainerSelectOptions as $trainerOption): ?>
+                                        <option value="<?php echo htmlspecialchars($trainerOption, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData["assistant_trainer_name"] === $trainerOption ? "selected" : ""; ?>>
+                                            <?php echo htmlspecialchars($trainerOption, ENT_QUOTES, 'UTF-8'); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                        </div>
+
+                        <?php if ($isGymnasticsGame): ?>
+                            <div class="form-group group-field-full">
+                                <label for="ballet_trainer_name">مدرب البالية</label>
+                                <div class="select-shell trainer-select-shell">
+                                    <select name="ballet_trainer_name" id="ballet_trainer_name" class="group-trainer-select" <?php echo !$hasTrainerOptions ? "disabled" : ""; ?>>
+                                        <option value="">اختياري</option>
+                                        <?php foreach ($trainerSelectOptions as $trainerOption): ?>
+                                            <option value="<?php echo htmlspecialchars($trainerOption, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $formData["ballet_trainer_name"] === $trainerOption ? "selected" : ""; ?>>
+                                                <?php echo htmlspecialchars($trainerOption, ENT_QUOTES, 'UTF-8'); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                            </div>
+                        <?php endif; ?>
 
                         <div class="form-group">
                             <label for="academy_percentage">نسبة الأكاديمية (%)</label>
@@ -707,12 +1006,27 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
                                         <td data-label="المستوى">
                                             <span class="group-level-pill"><?php echo htmlspecialchars($group["group_level"], ENT_QUOTES, 'UTF-8'); ?></span>
                                         </td>
-                                        <td data-label="المدرب"><?php echo htmlspecialchars($group["trainer_name"], ENT_QUOTES, 'UTF-8'); ?></td>
+                                        <td data-label="المدرب">
+                                            <div class="price-stack">
+                                                <span class="info-pill">الأساسي: <?php echo htmlspecialchars($group["trainer_name"], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                <?php if (trim((string)($group["assistant_trainer_name"] ?? "")) !== ""): ?>
+                                                    <span class="price-pill">المساعد: <?php echo htmlspecialchars($group["assistant_trainer_name"], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                <?php endif; ?>
+                                                <?php if (trim((string)($group["ballet_trainer_name"] ?? "")) !== ""): ?>
+                                                    <span class="price-pill">البالية: <?php echo htmlspecialchars($group["ballet_trainer_name"], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
                                         <td data-label="أيام التمرين أسبوعياً"><?php echo (int)$group["training_days_count"]; ?></td>
                                         <td data-label="جدول التمرين">
                                             <div class="price-stack">
-                                                <span class="info-pill"><?php echo htmlspecialchars(count($group["training_day_labels"]) > 0 ? implode(" - ", $group["training_day_labels"]) : "—", ENT_QUOTES, "UTF-8"); ?></span>
-                                                <span class="price-pill"><?php echo htmlspecialchars($group["training_time_label"] !== "" ? $group["training_time_label"] : "—", ENT_QUOTES, "UTF-8"); ?></span>
+                                                <?php if (count($group["training_schedule_labels"]) > 0): ?>
+                                                    <?php foreach ($group["training_schedule_labels"] as $scheduleLabel): ?>
+                                                        <span class="price-pill"><?php echo htmlspecialchars($scheduleLabel, ENT_QUOTES, "UTF-8"); ?></span>
+                                                    <?php endforeach; ?>
+                                                <?php else: ?>
+                                                    <span class="info-pill">—</span>
+                                                <?php endif; ?>
                                             </div>
                                         </td>
                                         <td data-label="إجمالي أيام التمرين"><?php echo (int)$group["trainings_count"]; ?></td>
@@ -753,14 +1067,40 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 <script id="groupDayLabels" type="application/json"><?php echo json_encode(PLAYER_DAY_OPTIONS, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
 <script id="groupInitialDays" type="application/json"><?php echo json_encode(array_values($formData["training_day_keys"]), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
+<script id="groupInitialDayTimes" type="application/json"><?php echo json_encode($initialTrainingDayTimeParts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
 <script src="assets/js/script.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const trainingDaysCountInput = document.getElementById('training_days_count');
     const trainingDaysContainer = document.getElementById('groupTrainingDaysContainer');
     const trainingDaysHelper = document.getElementById('groupTrainingDaysHelper');
+    const trainingTimesContainer = document.getElementById('groupTrainingTimesContainer');
+    const trainingTimesHelper = document.getElementById('groupTrainingTimesHelper');
     const dayLabels = JSON.parse(document.getElementById('groupDayLabels').textContent || '{}');
     let selectedDays = JSON.parse(document.getElementById('groupInitialDays').textContent || '[]');
+    let selectedDayTimes = JSON.parse(document.getElementById('groupInitialDayTimes').textContent || '{}');
+    const timePeriodLabels = { AM: 'ص', PM: 'م' };
+
+    const createSelectField = function (fieldName, options, selectedValue) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'select-shell';
+
+        const select = document.createElement('select');
+        select.name = fieldName;
+
+        options.forEach(function (option) {
+            const optionElement = document.createElement('option');
+            optionElement.value = option.value;
+            optionElement.textContent = option.label;
+            if (selectedValue === option.value) {
+                optionElement.selected = true;
+            }
+            select.appendChild(optionElement);
+        });
+
+        wrapper.appendChild(select);
+        return { wrapper: wrapper, select: select };
+    };
 
     const updateHelper = function (requiredCount) {
         if (!trainingDaysHelper) {
@@ -771,6 +1111,86 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
         trainingDaysHelper.textContent = 'اختر ' + requiredCount + ' يوم تمرين للمجموعة. المختار الآن: ' + selectedDays.length;
+    };
+
+    const updateTimesHelper = function () {
+        if (!trainingTimesHelper) {
+            return;
+        }
+
+        if (selectedDays.length === 0) {
+            trainingTimesHelper.textContent = 'حدّد يوم تدريب واحد على الأقل لإظهار حقول المواعيد.';
+            return;
+        }
+
+        trainingTimesHelper.textContent = 'سجّل الوقت بنظام 12 ساعة لكل يوم من الأيام المحددة.';
+    };
+
+    const renderTrainingTimes = function () {
+        if (!trainingTimesContainer) {
+            return;
+        }
+
+        trainingTimesContainer.innerHTML = '';
+
+        if (selectedDays.length === 0) {
+            updateTimesHelper();
+            return;
+        }
+
+        const hourOptions = [{ value: '', label: 'الساعة' }];
+        for (let hour = 1; hour <= 12; hour += 1) {
+            const value = String(hour).padStart(2, '0');
+            hourOptions.push({ value: value, label: value });
+        }
+
+        const minuteOptions = [{ value: '', label: 'الدقيقة' }];
+        for (let minute = 0; minute < 60; minute += 1) {
+            const value = String(minute).padStart(2, '0');
+            minuteOptions.push({ value: value, label: value });
+        }
+
+        const periodOptions = [
+            { value: '', label: 'الفترة' },
+            { value: 'AM', label: timePeriodLabels.AM },
+            { value: 'PM', label: timePeriodLabels.PM }
+        ];
+
+        selectedDays.forEach(function (dayKey) {
+            const dayTime = selectedDayTimes[dayKey] || { hour: '', minute: '', period: 'AM' };
+            const group = document.createElement('div');
+            group.className = 'form-group';
+
+            const label = document.createElement('label');
+            label.textContent = dayLabels[dayKey] || dayKey;
+            group.appendChild(label);
+
+            const fieldsRow = document.createElement('div');
+            fieldsRow.style.display = 'grid';
+            fieldsRow.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+            fieldsRow.style.gap = '10px';
+
+            const hourField = createSelectField('training_day_times[' + dayKey + '][hour]', hourOptions, dayTime.hour || '');
+            const minuteField = createSelectField('training_day_times[' + dayKey + '][minute]', minuteOptions, dayTime.minute || '');
+            const periodField = createSelectField('training_day_times[' + dayKey + '][period]', periodOptions, dayTime.period || 'AM');
+
+            [hourField, minuteField, periodField].forEach(function (field) {
+                field.select.required = true;
+                field.select.addEventListener('change', function () {
+                    selectedDayTimes[dayKey] = {
+                        hour: hourField.select.value,
+                        minute: minuteField.select.value,
+                        period: periodField.select.value
+                    };
+                });
+                fieldsRow.appendChild(field.wrapper);
+            });
+
+            group.appendChild(fieldsRow);
+            trainingTimesContainer.appendChild(group);
+        });
+
+        updateTimesHelper();
     };
 
     const renderTrainingDays = function () {
@@ -804,6 +1224,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 selectedDays = checkedInputs;
                 updateHelper(requiredCount);
+                renderTrainingTimes();
             });
 
             const text = document.createElement('span');
@@ -817,6 +1238,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         updateHelper(requiredCount);
+        renderTrainingTimes();
     };
 
     if (trainingDaysCountInput) {
