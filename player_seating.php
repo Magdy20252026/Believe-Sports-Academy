@@ -209,6 +209,12 @@ $filterLevel = isset($_GET['filter_level']) ? trim((string)$_GET['filter_level']
 $filterDaysCount = isset($_GET['filter_days_count']) && $_GET['filter_days_count'] !== '' ? (int)$_GET['filter_days_count'] : null;
 $filterDays = isset($_GET['filter_days']) && is_array($_GET['filter_days']) ? array_map('trim', $_GET['filter_days']) : [];
 $filterTime = isset($_GET['filter_time']) ? trim((string)$_GET['filter_time']) : '';
+$filterTrainer = isset($_GET['filter_trainer']) ? trim((string)$_GET['filter_trainer']) : '';
+$filterGroupStatus = isset($_GET['filter_group_status']) ? trim((string)$_GET['filter_group_status']) : '';
+
+if (!in_array($filterGroupStatus, ['complete', 'incomplete'], true)) {
+    $filterGroupStatus = '';
+}
 
 // جلب قيم الفلاتر المتاحة من قاعدة البيانات (للقوائم المنسدلة)
 $levelsStmt = $pdo->prepare("SELECT DISTINCT group_level FROM sports_groups WHERE game_id = ? ORDER BY group_level ASC");
@@ -222,6 +228,10 @@ $availableDaysCounts = array_column($daysCountsStmt->fetchAll(), 'training_days_
 $timesStmt = $pdo->prepare("SELECT DISTINCT training_time FROM sports_groups WHERE game_id = ? AND training_time IS NOT NULL AND training_time <> '' ORDER BY training_time ASC");
 $timesStmt->execute([$currentGameId]);
 $availableTimes = array_filter(array_column($timesStmt->fetchAll(), 'training_time'), function ($v) { return $v !== null && $v !== ''; });
+
+$trainersStmt = $pdo->prepare("SELECT DISTINCT trainer_name FROM sports_groups WHERE game_id = ? AND trainer_name <> '' ORDER BY trainer_name ASC");
+$trainersStmt->execute([$currentGameId]);
+$availableTrainers = array_column($trainersStmt->fetchAll(), 'trainer_name');
 
 // بناء استعلام المجموعات مع تطبيق الفلاتر
 $groupsSql = "SELECT id, group_name, group_level, max_players, trainer_name, training_days_count, training_day_keys, training_time
@@ -240,6 +250,10 @@ if ($filterDaysCount !== null) {
 if ($filterTime !== '') {
     $groupsSql .= " AND training_time = ?";
     $params[] = $filterTime;
+}
+if ($filterTrainer !== '') {
+    $groupsSql .= " AND trainer_name = ?";
+    $params[] = $filterTrainer;
 }
 
 $groupsSql .= " ORDER BY group_level ASC, group_name ASC, id DESC";
@@ -275,6 +289,16 @@ foreach ($groups as &$group) {
     $group["can_add_players"] = playerGroupHasAvailableSlot($group);
 }
 unset($group);
+
+if ($filterGroupStatus !== '') {
+    $groups = array_values(array_filter($groups, function (array $group) use ($filterGroupStatus) {
+        if ($filterGroupStatus === 'complete') {
+            return !$group["can_add_players"];
+        }
+
+        return $group["can_add_players"];
+    }));
+}
 
 // جلب اللاعبين الموجودين بالمجموعات
 $groupPlayersStmt = $pdo->prepare(
@@ -438,6 +462,27 @@ foreach ($groupPlayersStmt->fetchAll() as $playerRow) {
                                 <?php echo htmlspecialchars(formatTrainingTimeDisplay($timeValue), ENT_QUOTES, 'UTF-8'); ?>
                             </option>
                         <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter_trainer">🧑‍🏫 المدرب</label>
+                    <select name="filter_trainer" id="filter_trainer">
+                        <option value="">الكل</option>
+                        <?php foreach ($availableTrainers as $trainerName): ?>
+                            <option value="<?php echo htmlspecialchars($trainerName, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $filterTrainer === $trainerName ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($trainerName, ENT_QUOTES, 'UTF-8'); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter_group_status">📌 حالة المجموعة</label>
+                    <select name="filter_group_status" id="filter_group_status">
+                        <option value="">الكل</option>
+                        <option value="complete" <?php echo $filterGroupStatus === 'complete' ? 'selected' : ''; ?>>مكتملة</option>
+                        <option value="incomplete" <?php echo $filterGroupStatus === 'incomplete' ? 'selected' : ''; ?>>غير مكتملة</option>
                     </select>
                 </div>
 
