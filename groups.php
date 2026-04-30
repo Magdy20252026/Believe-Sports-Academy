@@ -393,6 +393,16 @@ function formatGroupTrainingScheduleLabels(array $selectedDayKeys, array $dayTim
     return $labels;
 }
 
+function sanitizeGroupTrainingDayKeys(array $dayKeys)
+{
+    return sanitizePlayerTrainingDayKeys($dayKeys);
+}
+
+function formatGroupTrainingDayLabels(array $dayKeys)
+{
+    return formatPlayerTrainingDaysLabel($dayKeys);
+}
+
 function getAssignedGroupTrainerRoles(array $formData, $isGymnasticsGame)
 {
     $trainerRoles = [
@@ -412,7 +422,7 @@ function getAssignedGroupTrainerRoles(array $formData, $isGymnasticsGame)
 function findGroupTrainerDayOffConflict(array $trainingDayKeys, array $assignedTrainerRoles, array $trainerDaysOffByName)
 {
     foreach ($assignedTrainerRoles as $trainerRoleLabel => $trainerName) {
-        $trainerDaysOff = sanitizePlayerTrainingDayKeys($trainerDaysOffByName[$trainerName] ?? []);
+        $trainerDaysOff = sanitizeGroupTrainingDayKeys($trainerDaysOffByName[$trainerName] ?? []);
         if (count($trainerDaysOff) === 0) {
             continue;
         }
@@ -422,7 +432,7 @@ function findGroupTrainerDayOffConflict(array $trainingDayKeys, array $assignedT
             continue;
         }
 
-        $conflictingDayLabels = implode('، ', formatPlayerTrainingDaysLabel($conflictingDayKeys));
+        $conflictingDayLabels = implode('، ', formatGroupTrainingDayLabels($conflictingDayKeys));
         return $trainerRoleLabel . ' "' . $trainerName . '" لديه إجازة في: ' . $conflictingDayLabels . '.';
     }
 
