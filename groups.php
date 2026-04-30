@@ -596,6 +596,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     }
                 }
             }
+            $trainerDayOffConflict = findGroupTrainerDayOffConflict(
+                $formData["training_day_keys"],
+                getAssignedGroupTrainerRoles($formData, $isGymnasticsGame),
+                $trainerDaysOffByName
+            );
 
             if ($formData["group_name"] === "") {
                 $error = "اسم المجموعة مطلوب.";
@@ -643,13 +648,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "المجموعة غير متاحة.";
             } elseif (groupDuplicateExists($pdo, $currentGameId, $formData["group_name"], $formData["group_level"], $formData["id"])) {
                 $error = "هذه المجموعة مسجلة بالفعل لنفس المستوى.";
-            } elseif (
-                ($trainerDayOffConflict = findGroupTrainerDayOffConflict(
-                    $formData["training_day_keys"],
-                    getAssignedGroupTrainerRoles($formData, $isGymnasticsGame),
-                    $trainerDaysOffByName
-                )) !== ""
-            ) {
+            } elseif ($trainerDayOffConflict !== "") {
                 $error = "لا يمكن تسجيل المجموعة: " . $trainerDayOffConflict;
             } elseif ($formData["id"] > 0 && countPlayersInGroup($pdo, $currentGameId, $formData["id"], 0) > (int)$formData["max_players"]) {
                 $error = "الحد الأقصى للاعبين لا يمكن أن يكون أقل من عدد اللاعبين الحاليين بالمجموعة.";
