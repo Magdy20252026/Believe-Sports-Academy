@@ -44,12 +44,12 @@ function ensureSportsGroupsTable(PDO $pdo)
         "training_day_keys" => "ALTER TABLE sports_groups ADD COLUMN training_day_keys VARCHAR(255) NOT NULL DEFAULT '' AFTER training_days_count",
         "training_time" => "ALTER TABLE sports_groups ADD COLUMN training_time TIME NULL DEFAULT NULL AFTER training_day_keys",
         "training_day_times" => "ALTER TABLE sports_groups ADD COLUMN training_day_times LONGTEXT NULL DEFAULT NULL AFTER training_time",
-        "trainings_count" => "ALTER TABLE sports_groups ADD COLUMN trainings_count INT(11) NOT NULL DEFAULT 1 AFTER training_time",
+        "trainings_count" => "ALTER TABLE sports_groups ADD COLUMN trainings_count INT(11) NOT NULL DEFAULT 1 AFTER training_day_times",
         "exercises_count" => "ALTER TABLE sports_groups ADD COLUMN exercises_count INT(11) NOT NULL DEFAULT 1 AFTER trainings_count",
         "max_players" => "ALTER TABLE sports_groups ADD COLUMN max_players INT(11) NOT NULL DEFAULT 1 AFTER exercises_count",
         "assistant_trainer_name" => "ALTER TABLE sports_groups ADD COLUMN assistant_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER trainer_name",
         "ballet_trainer_name" => "ALTER TABLE sports_groups ADD COLUMN ballet_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER assistant_trainer_name",
-        "academy_percentage" => "ALTER TABLE sports_groups ADD COLUMN academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER trainer_name",
+        "academy_percentage" => "ALTER TABLE sports_groups ADD COLUMN academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER ballet_trainer_name",
     ];
 
     $existingColumnsStmt = $pdo->prepare(
@@ -215,8 +215,8 @@ function getGroupTrainerAssignments(PDO $pdo, $gameId, $groupId)
 
 function isGymnasticsGame($gameName)
 {
-    $gameName = preg_replace('/\s+/u', '', trim((string)$gameName));
-    return $gameName !== '' && preg_match('/جمباز/u', $gameName) === 1;
+    $normalizedGameName = preg_replace('/\s+/u', '', trim((string)$gameName));
+    return $normalizedGameName !== '' && preg_match('/جمباز/u', $normalizedGameName) === 1;
 }
 
 function convertGroup24HourTimeToParts($time)
@@ -553,7 +553,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif (count($formData["training_day_keys"]) !== (int)$formData["training_days_count"]) {
                 $error = "يجب تحديد " . (int)$formData["training_days_count"] . " يوم تمرين للمجموعة.";
             } elseif (count($formData["training_day_times"]) !== count($formData["training_day_keys"])) {
-                $error = "يجب تسجيل ميعاد التمرين بنظام 12 ساعة لكل يوم تدريب محدد.";
+                $error = "يجب إدخال وقت صحيح بنظام 12 ساعة لكل يوم من أيام التمرين المحددة.";
             } elseif ($formData["trainings_count"] === "") {
                 $error = "إجمالي عدد أيام التمرين غير صحيح.";
             } elseif ($formData["exercises_count"] === "") {

@@ -46,12 +46,12 @@ function ensurePlayerSeatingGroupsTable(PDO $pdo)
         "training_day_keys" => "ALTER TABLE sports_groups ADD COLUMN training_day_keys VARCHAR(255) NOT NULL DEFAULT '' AFTER training_days_count",
         "training_time" => "ALTER TABLE sports_groups ADD COLUMN training_time TIME NULL DEFAULT NULL AFTER training_day_keys",
         "training_day_times" => "ALTER TABLE sports_groups ADD COLUMN training_day_times LONGTEXT NULL DEFAULT NULL AFTER training_time",
-        "trainings_count" => "ALTER TABLE sports_groups ADD COLUMN trainings_count INT(11) NOT NULL DEFAULT 1 AFTER training_time",
+        "trainings_count" => "ALTER TABLE sports_groups ADD COLUMN trainings_count INT(11) NOT NULL DEFAULT 1 AFTER training_day_times",
         "exercises_count" => "ALTER TABLE sports_groups ADD COLUMN exercises_count INT(11) NOT NULL DEFAULT 1 AFTER trainings_count",
         "max_players" => "ALTER TABLE sports_groups ADD COLUMN max_players INT(11) NOT NULL DEFAULT 1 AFTER exercises_count",
         "assistant_trainer_name" => "ALTER TABLE sports_groups ADD COLUMN assistant_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER trainer_name",
         "ballet_trainer_name" => "ALTER TABLE sports_groups ADD COLUMN ballet_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER assistant_trainer_name",
-        "academy_percentage" => "ALTER TABLE sports_groups ADD COLUMN academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER trainer_name",
+        "academy_percentage" => "ALTER TABLE sports_groups ADD COLUMN academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER ballet_trainer_name",
     ];
 
     $existingColumnsStmt = $pdo->prepare(
