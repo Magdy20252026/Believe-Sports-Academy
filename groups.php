@@ -393,6 +393,42 @@ function formatGroupTrainingScheduleLabels(array $selectedDayKeys, array $dayTim
     return $labels;
 }
 
+function getAssignedGroupTrainerRoles(array $formData, $isGymnasticsGame)
+{
+    $trainerRoles = [
+        'المدرب الأساسي' => trim((string)($formData['trainer_name'] ?? '')),
+        'المدرب المساعد' => trim((string)($formData['assistant_trainer_name'] ?? '')),
+    ];
+
+    if ($isGymnasticsGame) {
+        $trainerRoles['مدرب البالية'] = trim((string)($formData['ballet_trainer_name'] ?? ''));
+    }
+
+    return array_filter($trainerRoles, function ($trainerName) {
+        return $trainerName !== '';
+    });
+}
+
+function findGroupTrainerDayOffConflict(array $trainingDayKeys, array $assignedTrainerRoles, array $trainerDaysOffByName)
+{
+    foreach ($assignedTrainerRoles as $trainerRoleLabel => $trainerName) {
+        $trainerDaysOff = $trainerDaysOffByName[$trainerName] ?? [];
+        if (count($trainerDaysOff) === 0) {
+            continue;
+        }
+
+        $conflictingDayKeys = array_intersect($trainingDayKeys, $trainerDaysOff);
+        if (count($conflictingDayKeys) === 0) {
+            continue;
+        }
+
+        $conflictingDayLabels = implode('، ', formatPlayerTrainingDaysLabel($conflictingDayKeys));
+        return $trainerRoleLabel . ' "' . $trainerName . '" لديه إجازة في: ' . $conflictingDayLabels . '.';
+    }
+
+    return '';
+}
+
 function groupDuplicateExists(PDO $pdo, $gameId, $groupName, $groupLevel, $groupId = 0)
 {
     $sql = (int)$groupId > 0
@@ -455,15 +491,37 @@ foreach ($existingLevelOptionsStmt->fetchAll(PDO::FETCH_COLUMN) as $existingLeve
     }
 }
 $trainerSuggestions = [];
+$trainerDaysOffByName = [];
 
 try {
-    $trainerSuggestionsStmt = $pdo->prepare("SELECT name FROM trainers WHERE game_id = ? ORDER BY name ASC");
+    $trainerSuggestionsStmt = $pdo->prepare(
+        "SELECT
+            t.name,
+            GROUP_CONCAT(
+                DISTINCT td.day_key
+                ORDER BY FIELD(td.day_key, " . PLAYER_DAY_ORDER_SQL . ")
+                SEPARATOR '" . PLAYER_DAY_SEPARATOR . "'
+            ) AS days_off
+         FROM trainers t
+         LEFT JOIN trainer_days_off td ON td.trainer_id = t.id
+         WHERE t.game_id = ?
+           AND t.name <> ''
+         GROUP BY t.name
+         ORDER BY t.name ASC"
+    );
     $trainerSuggestionsStmt->execute([$currentGameId]);
-    $trainerSuggestions = array_values(array_unique(array_filter(array_map(function ($trainer) {
-        return trim((string)($trainer["name"] ?? ""));
-    }, $trainerSuggestionsStmt->fetchAll()))));
+    foreach ($trainerSuggestionsStmt->fetchAll() as $trainerRow) {
+        $trainerName = trim((string)($trainerRow['name'] ?? ''));
+        if ($trainerName === '') {
+            continue;
+        }
+
+        $trainerSuggestions[] = $trainerName;
+        $trainerDaysOffByName[$trainerName] = getPlayerTrainingDayKeys($trainerRow['days_off'] ?? '');
+    }
 } catch (Throwable $throwable) {
     $trainerSuggestions = [];
+    $trainerDaysOffByName = [];
 }
 
 $formData = [
@@ -538,7 +596,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     }
                 }
             }
-
             if ($formData["group_name"] === "") {
                 $error = "اسم المجموعة مطلوب.";
             } elseif ($formData["group_level"] === "") {
@@ -588,6 +645,17 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif ($formData["id"] > 0 && countPlayersInGroup($pdo, $currentGameId, $formData["id"], 0) > (int)$formData["max_players"]) {
                 $error = "الحد الأقصى للاعبين لا يمكن أن يكون أقل من عدد اللاعبين الحاليين بالمجموعة.";
             } else {
+                $trainerDayOffConflict = findGroupTrainerDayOffConflict(
+                    $formData["training_day_keys"],
+                    getAssignedGroupTrainerRoles($formData, $isGymnasticsGame),
+                    $trainerDaysOffByName
+                );
+                if ($trainerDayOffConflict !== "") {
+                    $error = "لا يمكن تسجيل المجموعة: " . $trainerDayOffConflict;
+                }
+            }
+
+            if ($error === "") {
                 if (!$isGymnasticsGame) {
                     $formData["ballet_trainer_name"] = "";
                 }
