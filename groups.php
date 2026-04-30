@@ -215,8 +215,8 @@ function getGroupTrainerAssignments(PDO $pdo, $gameId, $groupId)
 
 function isGymnasticsGame($gameName)
 {
-    $normalizedGameName = preg_replace('/\s+/u', '', trim((string)$gameName));
-    return $normalizedGameName !== '' && preg_match('/جمباز/u', $normalizedGameName) === 1;
+    $gameNameWithoutWhitespace = preg_replace('/\s+/u', '', trim((string)$gameName));
+    return $gameNameWithoutWhitespace !== '' && preg_match('/جمباز/u', $gameNameWithoutWhitespace) === 1;
 }
 
 function convertGroup24HourTimeToParts($time)
@@ -528,9 +528,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $formData["training_day_keys"],
                 $formData["training_day_times"]
             );
-            if (!$isGymnasticsGame) {
-                $formData["ballet_trainer_name"] = "";
-            }
 
             $trainerValidationOptions = $trainerSuggestions;
             if ($formData["id"] > 0) {
@@ -569,6 +566,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 && !in_array($formData["assistant_trainer_name"], $trainerValidationOptions, true)
             ) {
                 $error = "المدرب المساعد المحدد غير متاح.";
+            } elseif (!$isGymnasticsGame && $formData["ballet_trainer_name"] !== "") {
+                $error = "مدرب البالية متاح لمجموعات الجمباز فقط.";
             } elseif (
                 $formData["ballet_trainer_name"] !== ""
                 && !in_array($formData["ballet_trainer_name"], $trainerValidationOptions, true)
@@ -589,6 +588,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif ($formData["id"] > 0 && countPlayersInGroup($pdo, $currentGameId, $formData["id"], 0) > (int)$formData["max_players"]) {
                 $error = "الحد الأقصى للاعبين لا يمكن أن يكون أقل من عدد اللاعبين الحاليين بالمجموعة.";
             } else {
+                if (!$isGymnasticsGame) {
+                    $formData["ballet_trainer_name"] = "";
+                }
                 $trainingDayValue = implode(PLAYER_DAY_SEPARATOR, $formData["training_day_keys"]);
                 $trainingDayTimesValue = encodeGroupTrainingDayTimes($formData["training_day_times"]);
                 try {
@@ -729,15 +731,11 @@ if ($editGroupId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
 }
 
 $trainerSelectOptions = $trainerSuggestions;
-if (
-    $formData["trainer_name"] !== ""
-    && !in_array($formData["trainer_name"], $trainerSelectOptions, true)
-) {
-    $trainerSelectOptions[] = $formData["trainer_name"];
-    sort($trainerSelectOptions, SORT_NATURAL);
+$trainerFieldNames = ["trainer_name", "assistant_trainer_name"];
+if ($isGymnasticsGame) {
+    $trainerFieldNames[] = "ballet_trainer_name";
 }
-$optionalTrainerFieldNames = ["assistant_trainer_name", "ballet_trainer_name"];
-foreach ($optionalTrainerFieldNames as $trainerFieldName) {
+foreach ($trainerFieldNames as $trainerFieldName) {
     if (
         $formData[$trainerFieldName] !== ""
         && !in_array($formData[$trainerFieldName], $trainerSelectOptions, true)
