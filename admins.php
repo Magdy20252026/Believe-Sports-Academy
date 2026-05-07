@@ -152,6 +152,12 @@ function isValidAdminTime($time)
     return preg_match(ADMIN_TIME_REGEX, (string)$time) === 1;
 }
 
+function normalizeAdminTimeInputValue($time)
+{
+    $time = substr(trim((string)$time), 0, 5);
+    return isValidAdminTime($time) ? $time : "";
+}
+
 function normalizeAdminSalaryValue($salary)
 {
     return number_format((float)$salary, 2, ".", "");
@@ -208,18 +214,17 @@ function convertAdmin12HourPartsTo24Hour($hour, $minute, $period)
 
 function formatAdminTimeForDisplay($time)
 {
-    $parts = convertAdmin24HourTimeToParts($time);
-    if ($parts["hour"] === "" || $parts["minute"] === "") {
+    $time = normalizeAdminTimeInputValue($time);
+    if ($time === "") {
         return "";
     }
 
-    return $parts["hour"] . ":" . $parts["minute"] . " " . ADMIN_TIME_PERIODS[$parts["period"]];
+    return $time;
 }
 
 function formatAdminEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    $parts = convertAdmin24HourTimeToParts($dateTime->format("H:i"));
-    return $dateTime->format("Y/m/d") . " - " . $parts["hour"] . ":" . $parts["minute"] . " " . ADMIN_TIME_PERIODS[$parts["period"]];
+    return $dateTime->format("Y/m/d - H:i");
 }
 
 function fetchAdminDayKeys(PDO $pdo, $adminId)
@@ -240,12 +245,8 @@ function buildEmptyAdminWeeklyScheduleFormData()
     $schedule = [];
     foreach (ADMIN_DAY_OPTIONS as $dayKey => $_dayLabel) {
         $schedule[$dayKey] = [
-            "attendance_hour" => "",
-            "attendance_minute" => "",
-            "attendance_period" => "AM",
-            "departure_hour" => "",
-            "departure_minute" => "",
-            "departure_period" => "AM",
+            "attendance_time" => "",
+            "departure_time" => "",
         ];
     }
 
@@ -306,15 +307,9 @@ function buildAdminWeeklyScheduleFormData(array $storedSchedules, $defaultAttend
             continue;
         }
 
-        $attendanceParts = convertAdmin24HourTimeToParts($daySchedule["attendance_time"] ?? "");
-        $departureParts = convertAdmin24HourTimeToParts($daySchedule["departure_time"] ?? "");
         $formSchedule[$dayKey] = [
-            "attendance_hour" => $attendanceParts["hour"],
-            "attendance_minute" => $attendanceParts["minute"],
-            "attendance_period" => $attendanceParts["period"],
-            "departure_hour" => $departureParts["hour"],
-            "departure_minute" => $departureParts["minute"],
-            "departure_period" => $departureParts["period"],
+            "attendance_time" => normalizeAdminTimeInputValue($daySchedule["attendance_time"] ?? ""),
+            "departure_time" => normalizeAdminTimeInputValue($daySchedule["departure_time"] ?? ""),
         ];
     }
 
@@ -335,12 +330,8 @@ function normalizeAdminWeeklyScheduleInput($scheduleInput)
         }
 
         $normalizedSchedule[$dayKey] = [
-            "attendance_hour" => trim((string)($dayInput["attendance_hour"] ?? "")),
-            "attendance_minute" => trim((string)($dayInput["attendance_minute"] ?? "")),
-            "attendance_period" => strtoupper(trim((string)($dayInput["attendance_period"] ?? "AM"))),
-            "departure_hour" => trim((string)($dayInput["departure_hour"] ?? "")),
-            "departure_minute" => trim((string)($dayInput["departure_minute"] ?? "")),
-            "departure_period" => strtoupper(trim((string)($dayInput["departure_period"] ?? "AM"))),
+            "attendance_time" => normalizeAdminTimeInputValue($dayInput["attendance_time"] ?? ""),
+            "departure_time" => normalizeAdminTimeInputValue($dayInput["departure_time"] ?? ""),
         ];
     }
 
@@ -552,16 +543,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     }
 
                     $daySchedule = $formData["weekly_schedule"][$dayKey] ?? [];
-                    $attendanceTime = convertAdmin12HourPartsTo24Hour(
-                        $daySchedule["attendance_hour"] ?? "",
-                        $daySchedule["attendance_minute"] ?? "",
-                        $daySchedule["attendance_period"] ?? "AM"
-                    );
-                    $departureTime = convertAdmin12HourPartsTo24Hour(
-                        $daySchedule["departure_hour"] ?? "",
-                        $daySchedule["departure_minute"] ?? "",
-                        $daySchedule["departure_period"] ?? "AM"
-                    );
+                    $attendanceTime = normalizeAdminTimeInputValue($daySchedule["attendance_time"] ?? "");
+                    $departureTime = normalizeAdminTimeInputValue($daySchedule["departure_time"] ?? "");
 
                     if ($attendanceTime === "" || $departureTime === "") {
                         $error = "حدد ميعاد الحضور والانصراف ليوم " . $dayLabel . ".";
@@ -953,49 +936,13 @@ $totalSalaryAmount = (float)($statsRow["total_salary"] ?? 0);
                                     <div class="trainer-weekly-schedule-time-block">
                                         <label>الحضور</label>
                                         <div class="trainer-time-selects">
-                                            <select name="weekly_schedule[<?php echo htmlspecialchars($dayKey, ENT_QUOTES, 'UTF-8'); ?>][attendance_hour]" aria-label="ساعة حضور <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $isDayOff ? "disabled" : ""; ?>>
-                                                <option value="">الساعة</option>
-                                                <?php for ($hour = 1; $hour <= 12; $hour++): ?>
-                                                    <?php $hourValue = str_pad((string)$hour, 2, "0", STR_PAD_LEFT); ?>
-                                                    <option value="<?php echo $hourValue; ?>" <?php echo ($daySchedule["attendance_hour"] ?? "") === $hourValue ? "selected" : ""; ?>><?php echo $hourValue; ?></option>
-                                                <?php endfor; ?>
-                                            </select>
-                                            <select name="weekly_schedule[<?php echo htmlspecialchars($dayKey, ENT_QUOTES, 'UTF-8'); ?>][attendance_minute]" aria-label="دقيقة حضور <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $isDayOff ? "disabled" : ""; ?>>
-                                                <option value="">الدقيقة</option>
-                                                <?php for ($minute = 0; $minute <= 59; $minute++): ?>
-                                                    <?php $minuteValue = str_pad((string)$minute, 2, "0", STR_PAD_LEFT); ?>
-                                                    <option value="<?php echo $minuteValue; ?>" <?php echo ($daySchedule["attendance_minute"] ?? "") === $minuteValue ? "selected" : ""; ?>><?php echo $minuteValue; ?></option>
-                                                <?php endfor; ?>
-                                            </select>
-                                            <select name="weekly_schedule[<?php echo htmlspecialchars($dayKey, ENT_QUOTES, 'UTF-8'); ?>][attendance_period]" aria-label="فترة حضور <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $isDayOff ? "disabled" : ""; ?>>
-                                                <?php foreach (ADMIN_TIME_PERIODS as $periodValue => $periodLabel): ?>
-                                                    <option value="<?php echo $periodValue; ?>" <?php echo ($daySchedule["attendance_period"] ?? "AM") === $periodValue ? "selected" : ""; ?>><?php echo $periodLabel; ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
+                                            <input type="time" step="60" name="weekly_schedule[<?php echo htmlspecialchars($dayKey, ENT_QUOTES, 'UTF-8'); ?>][attendance_time]" aria-label="ميعاد حضور <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars((string)($daySchedule["attendance_time"] ?? ""), ENT_QUOTES, 'UTF-8'); ?>" <?php echo $isDayOff ? "disabled" : ""; ?>>
                                         </div>
                                     </div>
                                     <div class="trainer-weekly-schedule-time-block">
                                         <label>الانصراف</label>
                                         <div class="trainer-time-selects">
-                                            <select name="weekly_schedule[<?php echo htmlspecialchars($dayKey, ENT_QUOTES, 'UTF-8'); ?>][departure_hour]" aria-label="ساعة انصراف <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $isDayOff ? "disabled" : ""; ?>>
-                                                <option value="">الساعة</option>
-                                                <?php for ($hour = 1; $hour <= 12; $hour++): ?>
-                                                    <?php $hourValue = str_pad((string)$hour, 2, "0", STR_PAD_LEFT); ?>
-                                                    <option value="<?php echo $hourValue; ?>" <?php echo ($daySchedule["departure_hour"] ?? "") === $hourValue ? "selected" : ""; ?>><?php echo $hourValue; ?></option>
-                                                <?php endfor; ?>
-                                            </select>
-                                            <select name="weekly_schedule[<?php echo htmlspecialchars($dayKey, ENT_QUOTES, 'UTF-8'); ?>][departure_minute]" aria-label="دقيقة انصراف <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $isDayOff ? "disabled" : ""; ?>>
-                                                <option value="">الدقيقة</option>
-                                                <?php for ($minute = 0; $minute <= 59; $minute++): ?>
-                                                    <?php $minuteValue = str_pad((string)$minute, 2, "0", STR_PAD_LEFT); ?>
-                                                    <option value="<?php echo $minuteValue; ?>" <?php echo ($daySchedule["departure_minute"] ?? "") === $minuteValue ? "selected" : ""; ?>><?php echo $minuteValue; ?></option>
-                                                <?php endfor; ?>
-                                            </select>
-                                            <select name="weekly_schedule[<?php echo htmlspecialchars($dayKey, ENT_QUOTES, 'UTF-8'); ?>][departure_period]" aria-label="فترة انصراف <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $isDayOff ? "disabled" : ""; ?>>
-                                                <?php foreach (ADMIN_TIME_PERIODS as $periodValue => $periodLabel): ?>
-                                                    <option value="<?php echo $periodValue; ?>" <?php echo ($daySchedule["departure_period"] ?? "AM") === $periodValue ? "selected" : ""; ?>><?php echo $periodLabel; ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
+                                            <input type="time" step="60" name="weekly_schedule[<?php echo htmlspecialchars($dayKey, ENT_QUOTES, 'UTF-8'); ?>][departure_time]" aria-label="ميعاد انصراف <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, 'UTF-8'); ?>" value="<?php echo htmlspecialchars((string)($daySchedule["departure_time"] ?? ""), ENT_QUOTES, 'UTF-8'); ?>" <?php echo $isDayOff ? "disabled" : ""; ?>>
                                         </div>
                                     </div>
                                 </div>
@@ -1164,8 +1111,8 @@ document.addEventListener("DOMContentLoaded", function () {
             const isDayOff = dayOffSet.has(dayKey);
             card.classList.toggle("is-day-off", isDayOff);
 
-            card.querySelectorAll("select").forEach(function (select) {
-                select.disabled = isDayOff;
+            card.querySelectorAll("input, select").forEach(function (field) {
+                field.disabled = isDayOff;
             });
 
             const statusLabel = card.querySelector("[data-schedule-status]");

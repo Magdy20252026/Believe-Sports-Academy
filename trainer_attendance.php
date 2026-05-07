@@ -67,18 +67,17 @@ function convertTrainerAttendance24HourTimeToParts($time)
 
 function formatTrainerAttendanceTimeForDisplay($time)
 {
-    $parts = convertTrainerAttendance24HourTimeToParts($time);
-    if ($parts["hour"] === "" || $parts["minute"] === "") {
+    $time = substr(trim((string)$time), 0, 5);
+    if (preg_match('/^\d{2}:\d{2}$/', $time) !== 1) {
         return TRAINER_ATTENDANCE_EMPTY_VALUE;
     }
 
-    return $parts["hour"] . ":" . $parts["minute"] . " " . ($parts["period"] === "PM" ? "م" : "ص");
+    return $time;
 }
 
 function formatTrainerAttendanceDateTimeLabel(DateTimeInterface $dateTime)
 {
-    $parts = convertTrainerAttendance24HourTimeToParts($dateTime->format("H:i"));
-    return $dateTime->format("Y/m/d") . " - " . $parts["hour"] . ":" . $parts["minute"] . " " . ($parts["period"] === "PM" ? "م" : "ص");
+    return $dateTime->format("Y/m/d - H:i");
 }
 
 function formatTrainerAttendanceActualTime($dateTimeString)
@@ -94,8 +93,7 @@ function formatTrainerAttendanceActualTime($dateTimeString)
         return TRAINER_ATTENDANCE_EMPTY_VALUE;
     }
 
-    $parts = convertTrainerAttendance24HourTimeToParts($dateTime->format("H:i"));
-    return $parts["hour"] . ":" . $parts["minute"] . " " . ($parts["period"] === "PM" ? "م" : "ص");
+    return $dateTime->format("H:i");
 }
 
 function normalizeTrainerAttendanceDayKeys($dayKeysValue)

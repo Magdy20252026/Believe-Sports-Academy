@@ -542,10 +542,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                 }
             }
 
-            if ($error === '' && playerFieldExists($pdo, $currentGameId, 'phone', $formData['phone'], $formData['id'])) {
-                $error = 'رقم الهاتف مستخدم بالفعل.';
-            }
-
             if ($error === '' && $formData['barcode'] !== '' && playerFieldExists($pdo, $currentGameId, 'barcode', $formData['barcode'], $formData['id'])) {
                 $error = 'باركود اللاعب مستخدم بالفعل.';
             }

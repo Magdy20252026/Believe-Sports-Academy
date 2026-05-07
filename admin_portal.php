@@ -41,12 +41,7 @@ function adminPortalFormatTime($time) {
     $time = trim((string)$time);
     if (strlen($time) < 5) return "—";
     $time = substr($time, 0, 5);
-    if (!preg_match('/^(\d{2}):(\d{2})$/', $time, $m)) return "—";
-    $hour = (int)$m[1];
-    $min = $m[2];
-    $period = $hour >= 12 ? "م" : "ص";
-    $display = ($hour === 0 || $hour === 12) ? 12 : ($hour % 12);
-    return str_pad((string)$display, 2, "0", STR_PAD_LEFT) . ":" . $min . " " . $period;
+    return preg_match('/^\d{2}:\d{2}$/', $time) === 1 ? $time : "—";
 }
 
 function adminPortalFormatDate($dateStr) {
@@ -65,12 +60,7 @@ function adminPortalFormatDatetime($datetimeStr) {
     if ($datetimeStr === "" || $datetimeStr === "0000-00-00 00:00:00") return "—";
     try {
         $dt = new DateTimeImmutable($datetimeStr, new DateTimeZone("Africa/Cairo"));
-        $hour = (int)$dt->format("G");
-        $min = $dt->format("i");
-        $period = $hour >= 12 ? "م" : "ص";
-        $display = $hour % 12;
-        if ($display === 0) $display = 12;
-        return $dt->format("Y/m/d") . " - " . str_pad((string)$display, 2, "0", STR_PAD_LEFT) . ":" . $min . " " . $period;
+        return $dt->format("Y/m/d - H:i");
     } catch (Exception $ignored) {
         return "—";
     }
@@ -600,6 +590,24 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
 @media (max-width: 600px) {
     .portal-topbar {
         padding: 0 14px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    .portal-topbar-brand,
+    .portal-topbar-actions {
+        width: 100%;
+    }
+    .portal-topbar-actions {
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+    .portal-topbar-user {
+        flex: 1 1 auto;
+    }
+    .portal-logout-btn {
+        display: inline-flex;
     }
     .portal-main {
         padding: 16px 12px;

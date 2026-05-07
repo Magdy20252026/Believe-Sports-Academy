@@ -61,18 +61,17 @@ function convertAdminAttendance24HourTimeToParts($time)
 
 function formatAdminAttendanceTimeForDisplay($time)
 {
-    $parts = convertAdminAttendance24HourTimeToParts($time);
-    if ($parts["hour"] === "" || $parts["minute"] === "") {
+    $time = substr(trim((string)$time), 0, 5);
+    if (preg_match('/^\d{2}:\d{2}$/', $time) !== 1) {
         return ADMIN_ATTENDANCE_EMPTY_VALUE;
     }
 
-    return $parts["hour"] . ":" . $parts["minute"] . " " . ($parts["period"] === "PM" ? "م" : "ص");
+    return $time;
 }
 
 function formatAdminAttendanceDateTimeLabel(DateTimeInterface $dateTime)
 {
-    $parts = convertAdminAttendance24HourTimeToParts($dateTime->format("H:i"));
-    return $dateTime->format("Y/m/d") . " - " . $parts["hour"] . ":" . $parts["minute"] . " " . ($parts["period"] === "PM" ? "م" : "ص");
+    return $dateTime->format("Y/m/d - H:i");
 }
 
 function formatAdminAttendanceActualTime($dateTimeString)
@@ -88,8 +87,7 @@ function formatAdminAttendanceActualTime($dateTimeString)
         return ADMIN_ATTENDANCE_EMPTY_VALUE;
     }
 
-    $parts = convertAdminAttendance24HourTimeToParts($dateTime->format("H:i"));
-    return $parts["hour"] . ":" . $parts["minute"] . " " . ($parts["period"] === "PM" ? "م" : "ص");
+    return $dateTime->format("H:i");
 }
 
 function normalizeAdminAttendanceDayKeys($dayKeysValue)
