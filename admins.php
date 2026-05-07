@@ -571,9 +571,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $attendanceTime = normalizeAdminTimeInputValue($daySchedule["attendance_time"] ?? "");
                     $departureTime = normalizeAdminTimeInputValue($daySchedule["departure_time"] ?? "");
 
-                    if ($attendanceTime === "" && $departureTime === "" && is_array($defaultWorkingScheduleInput)) {
-                        $attendanceTime = $defaultWorkingScheduleInput["attendance_time"];
-                        $departureTime = $defaultWorkingScheduleInput["departure_time"];
+                    if ($attendanceTime === "" && $departureTime === "") {
+                        if (is_array($defaultWorkingScheduleInput)) {
+                            $attendanceTime = $defaultWorkingScheduleInput["attendance_time"];
+                            $departureTime = $defaultWorkingScheduleInput["departure_time"];
+                        } else {
+                            $error = "حدد ميعاد الحضور والانصراف ليوم عمل واحد على الأقل.";
+                            break;
+                        }
                     }
 
                     if ($attendanceTime === "" || $departureTime === "") {
