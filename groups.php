@@ -402,7 +402,7 @@ function findGroupTrainerDayOffConflict(array $trainingDayKeys, array $assignedT
     return '';
 }
 
-function filterGroupTrainerSuggestionsByDays(array $trainerSuggestions, array $trainerDaysOffByName, array $trainingDayKeys)
+function filterTrainersByAvailability(array $trainerSuggestions, array $trainerDaysOffByName, array $trainingDayKeys)
 {
     $trainingDayKeys = sanitizePlayerTrainingDayKeys($trainingDayKeys);
     if (count($trainingDayKeys) === 0) {
@@ -583,7 +583,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $formData["training_day_times"]
             );
 
-            $trainerValidationOptions = filterGroupTrainerSuggestionsByDays(
+            $trainerValidationOptions = filterTrainersByAvailability(
                 $trainerSuggestions,
                 $trainerDaysOffByName,
                 $formData["training_day_keys"]
@@ -790,7 +790,7 @@ if ($editGroupId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
     }
 }
 
-$trainerSelectOptions = filterGroupTrainerSuggestionsByDays(
+$trainerSelectOptions = filterTrainersByAvailability(
     $trainerSuggestions,
     $trainerDaysOffByName,
     $formData["training_day_keys"]
@@ -1133,6 +1133,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const trainingDaysHelper = document.getElementById('groupTrainingDaysHelper');
     const trainingTimesContainer = document.getElementById('groupTrainingTimesContainer');
     const trainingTimesHelper = document.getElementById('groupTrainingTimesHelper');
+    const groupTimeInputMinWidth = '170px';
     const dayLabels = JSON.parse(document.getElementById('groupDayLabels').textContent || '{}');
     const trainerAvailability = JSON.parse(document.getElementById('groupTrainerAvailability').textContent || '{}');
     const trainerSelectElements = Array.from(document.querySelectorAll('.group-trainer-select'));
@@ -1147,7 +1148,7 @@ document.addEventListener('DOMContentLoaded', function () {
         input.required = true;
         input.step = 60;
         input.style.width = '100%';
-        input.style.minWidth = '170px';
+        input.style.minWidth = groupTimeInputMinWidth;
         input.style.padding = '12px 14px';
         return input;
     };
@@ -1247,7 +1248,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const fieldsRow = document.createElement('div');
             fieldsRow.style.display = 'grid';
-            fieldsRow.style.gridTemplateColumns = 'minmax(170px, 240px)';
+            fieldsRow.style.gridTemplateColumns = 'minmax(' + groupTimeInputMinWidth + ', 240px)';
             fieldsRow.style.gap = '10px';
 
             const timeField = createTimeField('training_day_times[' + dayKey + ']', dayTime);

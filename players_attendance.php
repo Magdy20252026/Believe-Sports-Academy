@@ -855,9 +855,9 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
             ];
         }
 
-        $canReplaceAutoAbsence = $existingRecord
+        $isExistingAbsence = $existingRecord
             && (($existingRecord["attendance_status"] ?? "") === PLAYER_ATTENDANCE_STATUS_ABSENT);
-        if ($lateCutoff instanceof DateTimeImmutable && $now >= $lateCutoff && !$canReplaceAutoAbsence) {
+        if ($lateCutoff instanceof DateTimeImmutable && $now >= $lateCutoff && !$isExistingAbsence) {
             if (!$existingRecord) {
                 $insertAbsentStmt = $pdo->prepare(
                     "INSERT INTO player_attendance (
