@@ -36,6 +36,48 @@
         return out;
     }
 
+    function normalizeAsciiDigits(value) {
+        return String(value || "")
+            .replace(/[٠-٩]/g, function (digit) { return String(digit.charCodeAt(0) - 1632); })
+            .replace(/[۰-۹]/g, function (digit) { return String(digit.charCodeAt(0) - 1776); });
+    }
+
+    function maskTime24(value) {
+        var digits = normalizeAsciiDigits(value).replace(/\D/g, "").slice(0, 4);
+        if (digits.length <= 2) return digits;
+        if (digits.length === 3) return digits.slice(0, 1) + ":" + digits.slice(1);
+        return digits.slice(0, 2) + ":" + digits.slice(2);
+    }
+
+    function normalizeTime24Value(value) {
+        var normalizedValue = normalizeAsciiDigits(value).trim().replace(/[^\d:]/g, "");
+        if (!normalizedValue) return "";
+
+        var hour = 0;
+        var minute = 0;
+        var matched = normalizedValue.match(/^(\d{1,2}):(\d{1,2})$/);
+        if (matched) {
+            hour = parseInt(matched[1], 10);
+            minute = parseInt(matched[2], 10);
+        } else if (/^\d{3,4}$/.test(normalizedValue)) {
+            if (normalizedValue.length === 3) {
+                hour = parseInt(normalizedValue.slice(0, 1), 10);
+                minute = parseInt(normalizedValue.slice(1), 10);
+            } else {
+                hour = parseInt(normalizedValue.slice(0, 2), 10);
+                minute = parseInt(normalizedValue.slice(2), 10);
+            }
+        } else {
+            return "";
+        }
+
+        if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+            return "";
+        }
+
+        return pad2(hour) + ":" + pad2(minute);
+    }
+
     function ensureTheme() {
         var body = document.body;
         var themeToggle = document.getElementById("themeToggle");
@@ -203,11 +245,55 @@
     function enhanceTimeInput(timeInput) {
         if (!timeInput || timeInput.dataset.time24Bound === "1") return;
         timeInput.dataset.time24Bound = "1";
+        timeInput.type = "text";
+        timeInput.autocomplete = "off";
+        timeInput.placeholder = "00:00";
         timeInput.setAttribute("lang", "en-GB");
         timeInput.setAttribute("inputmode", "numeric");
         timeInput.setAttribute("dir", "ltr");
-        if (!timeInput.getAttribute("step")) {
-            timeInput.setAttribute("step", "60");
+        timeInput.setAttribute("maxlength", "5");
+        timeInput.style.direction = "ltr";
+        timeInput.style.textAlign = "left";
+        timeInput.value = normalizeTime24Value(timeInput.value);
+
+        timeInput.addEventListener("input", function () {
+            var maskedValue = maskTime24(timeInput.value);
+            timeInput.value = maskedValue;
+            timeInput.setCustomValidity("");
+        });
+
+        timeInput.addEventListener("blur", function () {
+            var normalizedValue = normalizeTime24Value(timeInput.value);
+            if (timeInput.value.trim() !== "" && normalizedValue === "") {
+                timeInput.setCustomValidity("الرجاء إدخال الوقت بصيغة 24 ساعة مثل 18:30");
+                return;
+            }
+
+            timeInput.value = normalizedValue;
+            timeInput.setCustomValidity("");
+        });
+
+        var form = timeInput.form;
+        if (form && form.dataset.time24FormBound !== "1") {
+            form.dataset.time24FormBound = "1";
+            form.addEventListener("submit", function (ev) {
+                var bad = false;
+                form.querySelectorAll('input[data-time24-bound="1"]').forEach(function (field) {
+                    var normalizedValue = normalizeTime24Value(field.value);
+                    if (field.value.trim() !== "" && normalizedValue === "") {
+                        field.setCustomValidity("الرجاء إدخال الوقت بصيغة 24 ساعة مثل 18:30");
+                        bad = true;
+                        return;
+                    }
+
+                    field.value = normalizedValue;
+                    field.setCustomValidity("");
+                });
+
+                if (bad) {
+                    ev.preventDefault();
+                }
+            });
         }
     }
 
