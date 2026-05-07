@@ -72,7 +72,7 @@ function formatEgyptTimeForDisplay($value, $emptyValue = "—")
         return (string)$emptyValue;
     }
 
-    return $dateTime->format("h:i") . " " . formatEgyptMeridiemLabel($dateTime);
+    return $dateTime->format("h:i") . "\u{00A0}" . formatEgyptMeridiemLabel($dateTime);
 }
 
 function formatEgyptDateTimeForDisplay($value, $emptyValue = "—", $dateFormat = "Y/m/d", $separator = " - ")
