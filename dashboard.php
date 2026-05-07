@@ -339,7 +339,7 @@ function fetchDashboardBirthdayAlerts(PDO $pdo, $gameId, DateTimeImmutable $toda
             "group_level" => (string)($player["group_level"] ?? ""),
             "trainer_name" => (string)($player["trainer_name"] ?? ""),
             "detail" => $playerAge > 0
-                ? "اليوم عيد ميلاده ويتم عامه رقم " . ($playerAge + 1) . "."
+                ? "اليوم عيد ميلاده وأتم عامه رقم " . $playerAge . "."
                 : "اليوم عيد ميلاده.",
             "alert_date" => $today->format("Y-m-d"),
             "alert_time" => "—",
