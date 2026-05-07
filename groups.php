@@ -1134,6 +1134,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const trainingTimesContainer = document.getElementById('groupTrainingTimesContainer');
     const trainingTimesHelper = document.getElementById('groupTrainingTimesHelper');
     const groupTimeInputMinWidth = '170px';
+    const groupTimeInputMaxWidth = '240px';
     const dayLabels = JSON.parse(document.getElementById('groupDayLabels').textContent || '{}');
     const trainerAvailability = JSON.parse(document.getElementById('groupTrainerAvailability').textContent || '{}');
     const trainerSelectElements = Array.from(document.querySelectorAll('.group-trainer-select'));
@@ -1248,7 +1249,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const fieldsRow = document.createElement('div');
             fieldsRow.style.display = 'grid';
-            fieldsRow.style.gridTemplateColumns = 'minmax(' + groupTimeInputMinWidth + ', 240px)';
+            fieldsRow.style.gridTemplateColumns = 'minmax(' + groupTimeInputMinWidth + ', ' + groupTimeInputMaxWidth + ')';
             fieldsRow.style.gap = '10px';
 
             const timeField = createTimeField('training_day_times[' + dayKey + ']', dayTime);
