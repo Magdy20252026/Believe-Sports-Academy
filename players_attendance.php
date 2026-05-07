@@ -155,17 +155,31 @@ function isPlayerAttendanceScheduledForDay(array $player, $dayKey)
 
 function buildPlayerAttendanceOffScheduleNotice(array $player, $dayKey)
 {
-    $todayLabel = PLAYER_DAY_OPTIONS[$dayKey] ?? "هذا اليوم";
     $trainingDayLabels = $player["training_day_labels"] ?? [];
     $scheduledDaysLabel = count($trainingDayLabels) > 0
         ? implode(" - ", $trainingDayLabels)
         : "غير محددة";
-    $scheduledTimeLabel = formatTrainingTimeDisplay($player["training_time"] ?? "");
+    $scheduledTimeLabel = formatTrainingTimeLabel($player["training_time"] ?? "");
     $scheduledTimeMessage = $scheduledTimeLabel !== ""
-        ? " وميعاده " . $scheduledTimeLabel
+        ? " وميعاده المسجل " . $scheduledTimeLabel
         : "";
 
-    return "تنبيه: اللاعب حضر يوم " . $todayLabel . " خارج أيام تمرينه المحددة له (" . $scheduledDaysLabel . ")" . $scheduledTimeMessage . "، وتم خصم تمرينة من رصيده.";
+    return "تنبيه: هذا ليس ميعاد تمرين اللاعب. أيام التمرين المسجلة له هي (" . $scheduledDaysLabel . ")" . $scheduledTimeMessage . ".";
+}
+
+function buildPlayerAttendanceWrongTimeNotice(array $player, DateTimeImmutable $now)
+{
+    $scheduledTimeLabel = formatTrainingTimeLabel($player["training_time"] ?? "");
+    if ($scheduledTimeLabel === "") {
+        return "";
+    }
+
+    $currentTimeLabel = $now->format("H:i");
+    if ($currentTimeLabel === $scheduledTimeLabel) {
+        return "";
+    }
+
+    return "تنبيه: هذا ليس ميعاد تمرين اللاعب. الميعاد المسجل له هو " . $scheduledTimeLabel . " وتم تسجيل الحضور الآن في " . $currentTimeLabel . ".";
 }
 
 function getPlayerAttendanceLateCutoffDateTime(array $player, DateTimeImmutable $today)
@@ -286,6 +300,129 @@ function getPlayerAttendanceBlockMessage(array $player, DateTimeImmutable $today
     }
 
     return "";
+}
+
+function syncPlayerAbsenceRows(PDO $pdo, $gameId, array $playersById, DateTimeImmutable $today)
+{
+    if (count($playersById) === 0) {
+        return false;
+    }
+
+    $yesterday = $today->modify("-1 day");
+    $earliestStartDate = null;
+    foreach ($playersById as $player) {
+        $startDateValue = trim((string)($player["subscription_start_date"] ?? ""));
+        if (!isValidPlayerDate($startDateValue)) {
+            continue;
+        }
+
+        $startDate = createPlayerDate($startDateValue);
+        if ($earliestStartDate === null || $startDate < $earliestStartDate) {
+            $earliestStartDate = $startDate;
+        }
+    }
+
+    if (!$earliestStartDate instanceof DateTimeImmutable || $earliestStartDate > $yesterday) {
+        return false;
+    }
+
+    $existingStmt = $pdo->prepare(
+        "SELECT player_id, attendance_date
+         FROM player_attendance
+         WHERE game_id = ?
+           AND attendance_date BETWEEN ? AND ?"
+    );
+    $existingStmt->execute([
+        (int)$gameId,
+        $earliestStartDate->format("Y-m-d"),
+        $yesterday->format("Y-m-d"),
+    ]);
+
+    $existingRows = [];
+    foreach ($existingStmt->fetchAll() as $row) {
+        $playerId = (int)($row["player_id"] ?? 0);
+        if (!isset($existingRows[$playerId])) {
+            $existingRows[$playerId] = [];
+        }
+        $existingRows[$playerId][(string)($row["attendance_date"] ?? "")] = true;
+    }
+
+    $rowsToInsert = [];
+    foreach ($playersById as $player) {
+        $playerId = (int)($player["id"] ?? 0);
+        $remainingTrainings = (int)($player["remaining_trainings"] ?? 0);
+        $trainingDayKeys = $player["training_day_keys_list"] ?? [];
+        $startDateValue = trim((string)($player["subscription_start_date"] ?? ""));
+        $endDateValue = trim((string)($player["subscription_end_date"] ?? ""));
+
+        if (
+            $playerId <= 0
+            || $remainingTrainings <= 0
+            || count($trainingDayKeys) === 0
+            || !isValidPlayerDate($startDateValue)
+            || !isValidPlayerDate($endDateValue)
+        ) {
+            continue;
+        }
+
+        $cursor = createPlayerDate($startDateValue);
+        $endDate = createPlayerDate($endDateValue);
+        $lastDate = $endDate < $yesterday ? $endDate : $yesterday;
+        if ($cursor > $lastDate) {
+            continue;
+        }
+
+        while ($cursor <= $lastDate && $remainingTrainings > 0) {
+            $attendanceDate = $cursor->format("Y-m-d");
+            $dayKey = getPlayerAttendanceDayKeyFromDate($cursor);
+            if (
+                in_array($dayKey, $trainingDayKeys, true)
+                && empty($existingRows[$playerId][$attendanceDate])
+            ) {
+                $rowsToInsert[] = [
+                    (int)$gameId,
+                    $playerId,
+                    $attendanceDate,
+                    $dayKey,
+                    PLAYER_ATTENDANCE_STATUS_ABSENT,
+                    PLAYER_ATTENDANCE_DEFAULT_MINUTES_LATE,
+                ];
+                $remainingTrainings--;
+            }
+
+            $cursor = $cursor->modify("+1 day");
+        }
+    }
+
+    if (count($rowsToInsert) === 0) {
+        return false;
+    }
+
+    $insertStmt = $pdo->prepare(
+        "INSERT IGNORE INTO player_attendance (
+            game_id,
+            player_id,
+            attendance_date,
+            attendance_day_key,
+            attendance_status,
+            attendance_minutes_late,
+            attendance_at
+        ) VALUES (?, ?, ?, ?, ?, ?, NULL)"
+    );
+
+    $pdo->beginTransaction();
+    try {
+        foreach ($rowsToInsert as $row) {
+            $insertStmt->execute($row);
+        }
+        $pdo->commit();
+        return true;
+    } catch (Throwable $throwable) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $throwable;
+    }
 }
 
 function normalizeAttendanceHourFilterValue($value)
@@ -811,7 +948,6 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
     $todayDate = $today->format("Y-m-d");
     $dayKey = getPlayerAttendanceDayKeyFromDate($today);
     $isScheduledDay = isPlayerAttendanceScheduledForDay($player, $dayKey);
-    $lateCutoff = $isScheduledDay ? getPlayerAttendanceLateCutoffDateTime($player, $today) : null;
     $attendanceMinutesLate = $isScheduledDay ? calculatePlayerAttendanceMinutesLate($player, $now, $today) : 0;
 
     $pdo->beginTransaction();
@@ -840,51 +976,6 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
             return [
                 "success" => false,
                 "message" => "تم تسجيل حضور هذا اللاعب اليوم بالفعل.",
-            ];
-        }
-
-        if ($lateCutoff instanceof DateTimeImmutable && $now >= $lateCutoff) {
-            if (!$existingRecord) {
-                $insertAbsentStmt = $pdo->prepare(
-                    "INSERT INTO player_attendance (
-                        game_id,
-                        player_id,
-                    attendance_date,
-                    attendance_day_key,
-                    attendance_status,
-                    attendance_minutes_late,
-                    attendance_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, NULL)"
-                );
-                $insertAbsentStmt->execute([
-                    (int)$gameId,
-                    (int)$player["id"],
-                    $todayDate,
-                    $dayKey,
-                    PLAYER_ATTENDANCE_STATUS_ABSENT,
-                    PLAYER_ATTENDANCE_DEFAULT_MINUTES_LATE,
-                ]);
-                auditTrack($pdo, "create", "player_attendance", (int)$pdo->lastInsertId(), "حضور اللاعبين", "احتساب غياب بسبب التأخير للاعب: " . (string)$player["name"]);
-                $lateCutoffLabel = formatTrainingTimeDisplay($lateCutoff->format("H:i:s"));
-                createPlayerNotification(
-                    $pdo,
-                    $gameId,
-                    (int)$player["id"],
-                    '🚫 تم تسجيل غياب اليوم',
-                    buildPlayerAbsenceNotificationMessage(
-                        $today->format("Y/m/d"),
-                        "السبب: عدم تسجيل الحضور قبل " . ($lateCutoffLabel !== "" ? $lateCutoffLabel : "نهاية المهلة المحددة") . "."
-                    ),
-                    'alert',
-                    'urgent',
-                    $todayDate
-                );
-            }
-
-            $pdo->commit();
-            return [
-                "success" => false,
-                "message" => buildPlayerAttendanceLateBlockMessage($player, $lateCutoff),
             ];
         }
 
@@ -941,99 +1032,19 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
             );
         }
 
-        $candidateIds = [];
-        foreach ($playersById as $candidatePlayer) {
-            if ((int)$candidatePlayer["id"] === (int)$player["id"]) {
-                continue;
-            }
-            if ((int)$candidatePlayer["group_id"] !== (int)$player["group_id"]) {
-                continue;
-            }
-            if (($candidatePlayer["training_day_signature"] ?? "") !== ($player["training_day_signature"] ?? "")) {
-                continue;
-            }
-            if (!canPlayerReceiveAttendanceMark($candidatePlayer, $today, $dayKey)) {
-                continue;
-            }
-
-            $candidateIds[] = (int)$candidatePlayer["id"];
-        }
-
-        $existingTodayRows = [];
-        if (count($candidateIds) > 0) {
-            foreach (array_chunk($candidateIds, PLAYER_ATTENDANCE_CANDIDATE_BATCH_SIZE) as $candidateChunk) {
-                $placeholders = implode(", ", array_fill(0, count($candidateChunk), "?"));
-                $existingRowsStmt = $pdo->prepare(
-                    "SELECT player_id, attendance_status
-                     FROM player_attendance
-                     WHERE attendance_date = ?
-                       AND player_id IN (" . $placeholders . ")
-                     FOR UPDATE"
-                );
-                $existingRowsStmt->execute(array_merge([$todayDate], $candidateChunk));
-                foreach ($existingRowsStmt->fetchAll() as $row) {
-                    $existingTodayRows[(int)$row["player_id"]] = (string)$row["attendance_status"];
-                }
-            }
-        }
-
-        $autoAbsentCount = 0;
-        if (count($candidateIds) > 0) {
-            $insertAbsentStmt = $pdo->prepare(
-                "INSERT INTO player_attendance (
-                    game_id,
-                    player_id,
-                    attendance_date,
-                    attendance_day_key,
-                    attendance_status,
-                    attendance_minutes_late,
-                    attendance_at
-                ) VALUES (?, ?, ?, ?, ?, ?, NULL)"
-            );
-
-            foreach ($candidateIds as $candidateId) {
-                if (isset($existingTodayRows[$candidateId])) {
-                    continue;
-                }
-
-                $insertAbsentStmt->execute([
-                    (int)$gameId,
-                    (int)$candidateId,
-                    $todayDate,
-                    $dayKey,
-                    PLAYER_ATTENDANCE_STATUS_ABSENT,
-                    PLAYER_ATTENDANCE_DEFAULT_MINUTES_LATE,
-                ]);
-                if (isset($playersById[$candidateId])) {
-                    createPlayerNotification(
-                        $pdo,
-                        $gameId,
-                        $candidateId,
-                        '🚫 تم تسجيل غياب اليوم',
-                        buildPlayerAbsenceNotificationMessage(
-                            $today->format("Y/m/d"),
-                            "يرجى مراجعة الإدارة إذا كان هذا التسجيل غير صحيح."
-                        ),
-                        'alert',
-                        'important',
-                        $todayDate
-                    );
-                }
-                $autoAbsentCount++;
-            }
-        }
-
         $pdo->commit();
 
         $subGameLabel = $pentathlonSubGame !== "" ? " في لعبة " . $pentathlonSubGame : "";
         $message = $existingRecord
             ? "تم تحويل غياب اللاعب " . $player["name"] . " إلى حضور" . $subGameLabel . "."
             : "تم تسجيل حضور اللاعب " . $player["name"] . $subGameLabel . ".";
-        if ($autoAbsentCount > 0) {
-            $message .= " وتم احتساب " . $autoAbsentCount . " حالة غياب تلقائيًا.";
-        }
         if (!$isScheduledDay) {
             $message .= " " . buildPlayerAttendanceOffScheduleNotice($player, $dayKey);
+        } else {
+            $wrongTimeNotice = buildPlayerAttendanceWrongTimeNotice($player, $now);
+            if ($wrongTimeNotice !== "") {
+                $message .= " " . $wrongTimeNotice;
+            }
         }
 
         return [
@@ -1110,6 +1121,20 @@ foreach (fetchPlayerAttendanceSnapshots($pdo, $currentGameId) as $playerRow) {
     $playersById[(int)$snapshot["id"]] = $snapshot;
     if (trim((string)$snapshot["barcode"]) !== "") {
         $playersByBarcode[(string)$snapshot["barcode"]] = $snapshot;
+    }
+}
+
+if (syncPlayerAbsenceRows($pdo, $currentGameId, $playersById, $today)) {
+    $players = [];
+    $playersById = [];
+    $playersByBarcode = [];
+    foreach (fetchPlayerAttendanceSnapshots($pdo, $currentGameId) as $playerRow) {
+        $snapshot = buildPlayerAttendanceSnapshot($playerRow, $today);
+        $players[] = $snapshot;
+        $playersById[(int)$snapshot["id"]] = $snapshot;
+        if (trim((string)$snapshot["barcode"]) !== "") {
+            $playersByBarcode[(string)$snapshot["barcode"]] = $snapshot;
+        }
     }
 }
 

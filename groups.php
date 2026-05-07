@@ -326,11 +326,7 @@ function normalizeGroupTrainingDayTimes(array $submittedTimes, array $selectedDa
         $dayPayload = isset($submittedTimes[$dayKey]) && is_array($submittedTimes[$dayKey])
             ? $submittedTimes[$dayKey]
             : [];
-        $normalizedTime = convertGroup12HourPartsTo24Hour(
-            $dayPayload['hour'] ?? '',
-            $dayPayload['minute'] ?? '',
-            $dayPayload['period'] ?? ''
-        );
+        $normalizedTime = normalizeTrainingTimeValue($dayPayload['time'] ?? ($submittedTimes[$dayKey] ?? ''));
         if ($normalizedTime !== '') {
             $normalizedTimes[$dayKey] = $normalizedTime;
         }
@@ -346,7 +342,9 @@ function buildGroupTrainingDayTimesFormData(array $dayTimes)
         if (!isset(PLAYER_DAY_OPTIONS[$dayKey])) {
             continue;
         }
-        $formDayTimes[$dayKey] = convertGroup24HourTimeToParts($timeValue);
+        $formDayTimes[$dayKey] = [
+            "time" => formatTrainingTimeLabel($timeValue),
+        ];
     }
 
     return $formDayTimes;
@@ -429,6 +427,150 @@ function findGroupTrainerDayOffConflict(array $trainingDayKeys, array $assignedT
     return '';
 }
 
+function fetchGroupTrainerAvailabilityByName(PDO $pdo, $gameId)
+{
+    $trainerStmt = $pdo->prepare(
+        "SELECT id, name, attendance_time, departure_time
+         FROM trainers
+         WHERE game_id = ?
+           AND name <> ''
+         ORDER BY name ASC, id ASC"
+    );
+    $trainerStmt->execute([(int)$gameId]);
+    $trainers = $trainerStmt->fetchAll();
+    if (count($trainers) === 0) {
+        return [];
+    }
+
+    $trainerIds = array_map(static function ($trainer) {
+        return (int)($trainer["id"] ?? 0);
+    }, $trainers);
+    $placeholders = implode(", ", array_fill(0, count($trainerIds), "?"));
+
+    $daysOffByTrainerId = [];
+    try {
+        $daysOffStmt = $pdo->prepare(
+            "SELECT trainer_id, day_key
+             FROM trainer_days_off
+             WHERE trainer_id IN (" . $placeholders . ")"
+        );
+        $daysOffStmt->execute($trainerIds);
+        foreach ($daysOffStmt->fetchAll() as $row) {
+            $trainerId = (int)($row["trainer_id"] ?? 0);
+            $dayKey = trim((string)($row["day_key"] ?? ""));
+            if ($trainerId > 0 && isset(PLAYER_DAY_OPTIONS[$dayKey])) {
+                $daysOffByTrainerId[$trainerId][] = $dayKey;
+            }
+        }
+    } catch (Throwable $throwable) {
+        $daysOffByTrainerId = [];
+    }
+
+    $scheduleRowsByTrainerId = [];
+    try {
+        $scheduleStmt = $pdo->prepare(
+            "SELECT trainer_id, day_key, attendance_time, departure_time
+             FROM trainer_weekly_schedule
+             WHERE trainer_id IN (" . $placeholders . ")"
+        );
+        $scheduleStmt->execute($trainerIds);
+        foreach ($scheduleStmt->fetchAll() as $row) {
+            $trainerId = (int)($row["trainer_id"] ?? 0);
+            $dayKey = trim((string)($row["day_key"] ?? ""));
+            if ($trainerId > 0 && isset(PLAYER_DAY_OPTIONS[$dayKey])) {
+                $scheduleRowsByTrainerId[$trainerId][$dayKey] = [
+                    "attendance_time" => normalizeTrainingTimeValue($row["attendance_time"] ?? ""),
+                    "departure_time" => normalizeTrainingTimeValue($row["departure_time"] ?? ""),
+                ];
+            }
+        }
+    } catch (Throwable $throwable) {
+        $scheduleRowsByTrainerId = [];
+    }
+
+    $availabilityByName = [];
+    foreach ($trainers as $trainer) {
+        $trainerId = (int)($trainer["id"] ?? 0);
+        $trainerName = trim((string)($trainer["name"] ?? ""));
+        if ($trainerId <= 0 || $trainerName === "") {
+            continue;
+        }
+
+        $defaultAttendanceTime = normalizeTrainingTimeValue($trainer["attendance_time"] ?? "");
+        $defaultDepartureTime = normalizeTrainingTimeValue($trainer["departure_time"] ?? "");
+        $daysOff = sanitizePlayerTrainingDayKeys($daysOffByTrainerId[$trainerId] ?? []);
+        $scheduleMap = [];
+        foreach (PLAYER_DAY_OPTIONS as $dayKey => $_dayLabel) {
+            if (in_array($dayKey, $daysOff, true)) {
+                continue;
+            }
+
+            $rowSchedule = $scheduleRowsByTrainerId[$trainerId][$dayKey] ?? null;
+            $attendanceTime = normalizeTrainingTimeValue($rowSchedule["attendance_time"] ?? $defaultAttendanceTime);
+            $departureTime = normalizeTrainingTimeValue($rowSchedule["departure_time"] ?? $defaultDepartureTime);
+            if ($attendanceTime === "" || $departureTime === "") {
+                continue;
+            }
+
+            $scheduleMap[$dayKey] = [
+                "attendance_time" => $attendanceTime,
+                "departure_time" => $departureTime,
+            ];
+        }
+
+        $availabilityByName[$trainerName][] = [
+            "trainer_id" => $trainerId,
+            "schedule_map" => $scheduleMap,
+        ];
+    }
+
+    return $availabilityByName;
+}
+
+function isGroupTrainerVariantAvailableForSchedule(array $trainerVariant, array $trainingDayKeys, array $dayTimes)
+{
+    $scheduleMap = $trainerVariant["schedule_map"] ?? [];
+    if (!is_array($scheduleMap)) {
+        return false;
+    }
+
+    foreach ($trainingDayKeys as $dayKey) {
+        if (!isset($scheduleMap[$dayKey])) {
+            return false;
+        }
+
+        $groupTime = normalizeTrainingTimeValue($dayTimes[$dayKey] ?? "");
+        if ($groupTime === "") {
+            continue;
+        }
+
+        $attendanceTime = normalizeTrainingTimeValue($scheduleMap[$dayKey]["attendance_time"] ?? "");
+        $departureTime = normalizeTrainingTimeValue($scheduleMap[$dayKey]["departure_time"] ?? "");
+        if ($attendanceTime === "" || $departureTime === "" || $groupTime < $attendanceTime || $groupTime > $departureTime) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function isGroupTrainerAvailableForSchedule($trainerName, array $trainingDayKeys, array $dayTimes, array $trainerAvailabilityByName)
+{
+    $trainerName = trim((string)$trainerName);
+    if ($trainerName === "") {
+        return false;
+    }
+
+    $variants = $trainerAvailabilityByName[$trainerName] ?? [];
+    foreach ($variants as $variant) {
+        if (isGroupTrainerVariantAvailableForSchedule($variant, $trainingDayKeys, $dayTimes)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function groupDuplicateExists(PDO $pdo, $gameId, $groupName, $groupLevel, $groupId = 0)
 {
     $sql = (int)$groupId > 0
@@ -491,37 +633,14 @@ foreach ($existingLevelOptionsStmt->fetchAll(PDO::FETCH_COLUMN) as $existingLeve
     }
 }
 $trainerSuggestions = [];
-$trainerDaysOffByName = [];
+$trainerAvailabilityByName = [];
 
 try {
-    $trainerSuggestionsStmt = $pdo->prepare(
-        "SELECT
-            t.name,
-            GROUP_CONCAT(
-                DISTINCT td.day_key
-                ORDER BY FIELD(td.day_key, " . PLAYER_DAY_ORDER_SQL . ")
-                SEPARATOR '" . PLAYER_DAY_SEPARATOR . "'
-            ) AS days_off
-         FROM trainers t
-         LEFT JOIN trainer_days_off td ON td.trainer_id = t.id
-         WHERE t.game_id = ?
-           AND t.name <> ''
-         GROUP BY t.name
-         ORDER BY t.name ASC"
-    );
-    $trainerSuggestionsStmt->execute([$currentGameId]);
-    foreach ($trainerSuggestionsStmt->fetchAll() as $trainerRow) {
-        $trainerName = trim((string)($trainerRow['name'] ?? ''));
-        if ($trainerName === '') {
-            continue;
-        }
-
-        $trainerSuggestions[] = $trainerName;
-        $trainerDaysOffByName[$trainerName] = getPlayerTrainingDayKeys($trainerRow['days_off'] ?? '');
-    }
+    $trainerAvailabilityByName = fetchGroupTrainerAvailabilityByName($pdo, $currentGameId);
+    $trainerSuggestions = array_keys($trainerAvailabilityByName);
 } catch (Throwable $throwable) {
     $trainerSuggestions = [];
-    $trainerDaysOffByName = [];
+    $trainerAvailabilityByName = [];
 }
 
 $formData = [
@@ -618,11 +737,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "اسم المدرب مطلوب.";
             } elseif (!in_array($formData["trainer_name"], $trainerValidationOptions, true)) {
                 $error = "المدرب المحدد غير متاح.";
+            } elseif (!isGroupTrainerAvailableForSchedule($formData["trainer_name"], $formData["training_day_keys"], $formData["training_day_times"], $trainerAvailabilityByName)) {
+                $error = "المدرب الأساسي لا يعمل في الأيام أو المواعيد المختارة للمجموعة.";
             } elseif (
                 $formData["assistant_trainer_name"] !== ""
                 && !in_array($formData["assistant_trainer_name"], $trainerValidationOptions, true)
             ) {
                 $error = "المدرب المساعد المحدد غير متاح.";
+            } elseif (
+                $formData["assistant_trainer_name"] !== ""
+                && !isGroupTrainerAvailableForSchedule($formData["assistant_trainer_name"], $formData["training_day_keys"], $formData["training_day_times"], $trainerAvailabilityByName)
+            ) {
+                $error = "المدرب المساعد لا يعمل في الأيام أو المواعيد المختارة للمجموعة.";
             } elseif (!$isGymnasticsGame && $formData["ballet_trainer_name"] !== "") {
                 $error = "مدرب البالية متاح لمجموعات الجمباز فقط.";
             } elseif (
@@ -630,6 +756,11 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 && !in_array($formData["ballet_trainer_name"], $trainerValidationOptions, true)
             ) {
                 $error = "مدرب البالية المحدد غير متاح.";
+            } elseif (
+                $formData["ballet_trainer_name"] !== ""
+                && !isGroupTrainerAvailableForSchedule($formData["ballet_trainer_name"], $formData["training_day_keys"], $formData["training_day_times"], $trainerAvailabilityByName)
+            ) {
+                $error = "مدرب البالية لا يعمل في الأيام أو المواعيد المختارة للمجموعة.";
             } elseif ($formData["academy_percentage"] === "") {
                 $error = "نسبة الأكاديمية يجب أن تكون من 0 إلى 100.";
             } elseif ($formData["walkers_price"] === "") {
@@ -644,15 +775,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "هذه المجموعة مسجلة بالفعل لنفس المستوى.";
             } elseif ($formData["id"] > 0 && countPlayersInGroup($pdo, $currentGameId, $formData["id"], 0) > (int)$formData["max_players"]) {
                 $error = "الحد الأقصى للاعبين لا يمكن أن يكون أقل من عدد اللاعبين الحاليين بالمجموعة.";
-            } else {
-                $trainerDayOffConflict = findGroupTrainerDayOffConflict(
-                    $formData["training_day_keys"],
-                    getAssignedGroupTrainerRoles($formData, $isGymnasticsGame),
-                    $trainerDaysOffByName
-                );
-                if ($trainerDayOffConflict !== "") {
-                    $error = "لا يمكن تسجيل المجموعة: " . $trainerDayOffConflict;
-                }
             }
 
             if ($error === "") {
@@ -855,6 +977,19 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.css">
+    <style>
+        .group-training-time-input {
+            min-height: 52px;
+            font-size: 1rem;
+            padding: 12px 14px;
+        }
+        .group-trainer-warning {
+            margin-top: 8px;
+            color: #b45309;
+            font-size: 0.9rem;
+            font-weight: 700;
+        }
+    </style>
 </head>
 <body class="dashboard-page">
 <div class="dashboard-layout">
@@ -944,7 +1079,7 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
 
                         <div class="form-group group-field-full">
                             <label>مواعيد التمرين لكل يوم</label>
-                            <p class="form-helper-text" id="groupTrainingTimesHelper">سجّل الميعاد بنظام 12 ساعة لكل يوم تدريب محدد.</p>
+                            <p class="form-helper-text" id="groupTrainingTimesHelper">سجّل الميعاد بنظام 24 ساعة لكل يوم تدريب محدد.</p>
                             <div class="groups-form-grid" id="groupTrainingTimesContainer"></div>
                         </div>
 
@@ -1006,6 +1141,10 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
                                 </div>
                             </div>
                         <?php endif; ?>
+
+                        <div class="form-group group-field-full">
+                            <div id="groupTrainerAvailabilityWarning" class="group-trainer-warning" style="display:none;"></div>
+                        </div>
 
                         <div class="form-group">
                             <label for="academy_percentage">نسبة الأكاديمية (%)</label>
@@ -1136,6 +1275,7 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
 <script id="groupDayLabels" type="application/json"><?php echo json_encode(PLAYER_DAY_OPTIONS, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
 <script id="groupInitialDays" type="application/json"><?php echo json_encode(array_values($formData["training_day_keys"]), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
 <script id="groupInitialDayTimes" type="application/json"><?php echo json_encode($initialTrainingDayTimeParts, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
+<script id="groupTrainerAvailability" type="application/json"><?php echo json_encode($trainerAvailabilityByName, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?></script>
 <script src="assets/js/script.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
@@ -1144,30 +1284,31 @@ document.addEventListener('DOMContentLoaded', function () {
     const trainingDaysHelper = document.getElementById('groupTrainingDaysHelper');
     const trainingTimesContainer = document.getElementById('groupTrainingTimesContainer');
     const trainingTimesHelper = document.getElementById('groupTrainingTimesHelper');
+    const trainerAvailabilityWarning = document.getElementById('groupTrainerAvailabilityWarning');
     const dayLabels = JSON.parse(document.getElementById('groupDayLabels').textContent || '{}');
     let selectedDays = JSON.parse(document.getElementById('groupInitialDays').textContent || '[]');
     let selectedDayTimes = JSON.parse(document.getElementById('groupInitialDayTimes').textContent || '{}');
-    const timePeriodLabels = { AM: 'ص', PM: 'م' };
-
-    const createSelectField = function (fieldName, options, selectedValue) {
-        const wrapper = document.createElement('div');
-        wrapper.className = 'select-shell';
-
-        const select = document.createElement('select');
-        select.name = fieldName;
-
-        options.forEach(function (option) {
-            const optionElement = document.createElement('option');
-            optionElement.value = option.value;
-            optionElement.textContent = option.label;
-            if (selectedValue === option.value) {
-                optionElement.selected = true;
-            }
-            select.appendChild(optionElement);
+    const trainerAvailabilityByName = JSON.parse(document.getElementById('groupTrainerAvailability').textContent || '{}');
+    const trainerSelects = Array.from(document.querySelectorAll('.group-trainer-select'));
+    const allTrainerOptions = Array.from(new Set(trainerSelects.flatMap(function (select) {
+        return Array.from(select.querySelectorAll('option')).map(function (option) {
+            return option.value;
+        }).filter(function (value) {
+            return value !== '';
         });
+    }))).sort(function (firstValue, secondValue) {
+        return firstValue.localeCompare(secondValue, 'ar');
+    });
 
-        wrapper.appendChild(select);
-        return { wrapper: wrapper, select: select };
+    const createTimeField = function (fieldName, selectedValue) {
+        const input = document.createElement('input');
+        input.type = 'time';
+        input.step = '60';
+        input.name = fieldName;
+        input.value = selectedValue || '';
+        input.required = true;
+        input.className = 'group-training-time-input';
+        return input;
     };
 
     const updateHelper = function (requiredCount) {
@@ -1191,7 +1332,96 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        trainingTimesHelper.textContent = 'سجّل الوقت بنظام 12 ساعة لكل يوم من الأيام المحددة.';
+        trainingTimesHelper.textContent = 'سجّل الوقت بنظام 24 ساعة لكل يوم من الأيام المحددة.';
+    };
+
+    const isTrainerAvailable = function (trainerName) {
+        const variants = Array.isArray(trainerAvailabilityByName[trainerName]) ? trainerAvailabilityByName[trainerName] : [];
+        if (variants.length === 0) {
+            return false;
+        }
+
+        return variants.some(function (variant) {
+            const scheduleMap = variant && typeof variant === 'object' ? (variant.schedule_map || {}) : {};
+            return selectedDays.every(function (dayKey) {
+                const daySchedule = scheduleMap[dayKey];
+                if (!daySchedule) {
+                    return false;
+                }
+
+                const selectedTime = (selectedDayTimes[dayKey] && selectedDayTimes[dayKey].time) ? selectedDayTimes[dayKey].time : '';
+                if (!selectedTime) {
+                    return true;
+                }
+
+                const attendanceTime = String(daySchedule.attendance_time || '').slice(0, 5);
+                const departureTime = String(daySchedule.departure_time || '').slice(0, 5);
+                return attendanceTime !== '' && departureTime !== '' && selectedTime >= attendanceTime && selectedTime <= departureTime;
+            });
+        });
+    };
+
+    const syncTrainerSelectOptions = function () {
+        const availableOptions = allTrainerOptions.filter(isTrainerAvailable);
+        const unavailableSelected = [];
+
+        trainerSelects.forEach(function (select) {
+            const previousValue = select.value;
+            const placeholderText = select.id === 'trainer_name'
+                ? (availableOptions.length > 0 ? 'اختر المدرب' : 'لا يوجد مدرب متاح')
+                : 'اختياري';
+
+            select.innerHTML = '';
+            const placeholderOption = document.createElement('option');
+            placeholderOption.value = '';
+            placeholderOption.textContent = placeholderText;
+            select.appendChild(placeholderOption);
+
+            availableOptions.forEach(function (trainerName) {
+                const optionElement = document.createElement('option');
+                optionElement.value = trainerName;
+                optionElement.textContent = trainerName;
+                if (trainerName === previousValue) {
+                    optionElement.selected = true;
+                }
+                select.appendChild(optionElement);
+            });
+
+            if (previousValue !== '' && availableOptions.indexOf(previousValue) === -1 && allTrainerOptions.indexOf(previousValue) !== -1) {
+                const unavailableOption = document.createElement('option');
+                unavailableOption.value = previousValue;
+                unavailableOption.textContent = previousValue + ' (خارج الأيام أو المواعيد المختارة)';
+                unavailableOption.selected = true;
+                select.appendChild(unavailableOption);
+                unavailableSelected.push(previousValue);
+            }
+
+            if (select.id === 'trainer_name') {
+                select.disabled = availableOptions.length === 0 && previousValue === '';
+                select.required = !select.disabled;
+            } else {
+                select.disabled = allTrainerOptions.length === 0;
+            }
+        });
+
+        if (!trainerAvailabilityWarning) {
+            return;
+        }
+
+        if (unavailableSelected.length > 0) {
+            trainerAvailabilityWarning.style.display = 'block';
+            trainerAvailabilityWarning.textContent = 'تنبيه: بعض المدربين المختارين لا يعملون في الأيام أو المواعيد الحالية للمجموعة.';
+            return;
+        }
+
+        if (selectedDays.length > 0 && availableOptions.length === 0) {
+            trainerAvailabilityWarning.style.display = 'block';
+            trainerAvailabilityWarning.textContent = 'لا يوجد مدرب متاح في الأيام أو المواعيد المختارة حاليًا.';
+            return;
+        }
+
+        trainerAvailabilityWarning.style.display = 'none';
+        trainerAvailabilityWarning.textContent = '';
     };
 
     const renderTrainingTimes = function () {
@@ -1206,26 +1436,8 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const hourOptions = [{ value: '', label: 'الساعة' }];
-        for (let hour = 1; hour <= 12; hour += 1) {
-            const value = String(hour).padStart(2, '0');
-            hourOptions.push({ value: value, label: value });
-        }
-
-        const minuteOptions = [{ value: '', label: 'الدقيقة' }];
-        for (let minute = 0; minute < 60; minute += 1) {
-            const value = String(minute).padStart(2, '0');
-            minuteOptions.push({ value: value, label: value });
-        }
-
-        const periodOptions = [
-            { value: '', label: 'الفترة' },
-            { value: 'AM', label: timePeriodLabels.AM },
-            { value: 'PM', label: timePeriodLabels.PM }
-        ];
-
         selectedDays.forEach(function (dayKey) {
-            const dayTime = selectedDayTimes[dayKey] || { hour: '', minute: '', period: 'AM' };
+            const dayTime = selectedDayTimes[dayKey] || { time: '' };
             const group = document.createElement('div');
             group.className = 'form-group';
 
@@ -1234,31 +1446,21 @@ document.addEventListener('DOMContentLoaded', function () {
             group.appendChild(label);
 
             const fieldsRow = document.createElement('div');
-            fieldsRow.style.display = 'grid';
-            fieldsRow.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
-            fieldsRow.style.gap = '10px';
-
-            const hourField = createSelectField('training_day_times[' + dayKey + '][hour]', hourOptions, dayTime.hour || '');
-            const minuteField = createSelectField('training_day_times[' + dayKey + '][minute]', minuteOptions, dayTime.minute || '');
-            const periodField = createSelectField('training_day_times[' + dayKey + '][period]', periodOptions, dayTime.period || 'AM');
-
-            [hourField, minuteField, periodField].forEach(function (field) {
-                field.select.required = true;
-                field.select.addEventListener('change', function () {
-                    selectedDayTimes[dayKey] = {
-                        hour: hourField.select.value,
-                        minute: minuteField.select.value,
-                        period: periodField.select.value
-                    };
-                });
-                fieldsRow.appendChild(field.wrapper);
+            const timeField = createTimeField('training_day_times[' + dayKey + '][time]', dayTime.time || '');
+            timeField.addEventListener('input', function () {
+                selectedDayTimes[dayKey] = {
+                    time: timeField.value
+                };
+                syncTrainerSelectOptions();
             });
+            fieldsRow.appendChild(timeField);
 
             group.appendChild(fieldsRow);
             trainingTimesContainer.appendChild(group);
         });
 
         updateTimesHelper();
+        syncTrainerSelectOptions();
     };
 
     const renderTrainingDays = function () {
@@ -1314,6 +1516,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     renderTrainingDays();
+    syncTrainerSelectOptions();
 });
 </script>
 </body>
