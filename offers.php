@@ -60,7 +60,7 @@ function formatOfferDateTimeValue($dateTimeString)
         return OFFERS_EMPTY_VALUE;
     }
 
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, OFFERS_EMPTY_VALUE);
 }
 
 function getOfferEgyptDateValue($dateTimeString)

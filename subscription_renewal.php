@@ -258,7 +258,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $formData['total_training_days'] = (string)(int)$selectedGroup['trainings_count'];
                 $formData['total_trainings'] = (string)(int)$selectedGroup['exercises_count'];
                 $formData['trainer_name'] = (string)$selectedGroup['trainer_name'];
-                $formData['training_time'] = formatTrainingTimeLabel($selectedGroupTrainingTime);
+                $formData['training_time'] = formatTrainingTimeDisplay($selectedGroupTrainingTime);
                 $formData['training_day_keys'] = $selectedGroupTrainingDayKeys;
                 $formData['subscription_price'] = formatPlayerCurrency($selectedGroupPrice);
                 $formData['academy_percentage'] = formatPlayerCurrency($selectedGroup['academy_percentage'] ?? 0);
@@ -383,7 +383,7 @@ if ($renewPlayerId > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
             'total_training_days' => (string)(int)($defaultGroup['trainings_count'] ?? 0),
             'total_trainings' => (string)(int)($defaultGroup['exercises_count'] ?? 0),
             'trainer_name' => (string)($defaultGroup['trainer_name'] ?? ''),
-            'training_time' => formatTrainingTimeLabel($defaultGroup['training_time'] ?? ''),
+            'training_time' => formatTrainingTimeDisplay($defaultGroup['training_time'] ?? ''),
             'training_day_keys' => getRenewalInitialTrainingDayKeys($renewPlayer, $defaultGroup),
         ];
     } elseif ($renewPlayerId > 0) {
@@ -418,7 +418,7 @@ foreach ($groups as $group) {
         'group_level' => (string)$group['group_level'],
         'training_days_count' => (int)$group['training_days_count'],
         'training_day_keys' => array_values(getPlayerTrainingDayKeys($group['training_day_keys'] ?? '')),
-        'training_time' => formatTrainingTimeLabel($group['training_time'] ?? ''),
+        'training_time' => formatTrainingTimeDisplay($group['training_time'] ?? ''),
         'trainings_count' => (int)$group['trainings_count'],
         'exercises_count' => (int)$group['exercises_count'],
         'max_players' => (int)($group['max_players'] ?? 0),

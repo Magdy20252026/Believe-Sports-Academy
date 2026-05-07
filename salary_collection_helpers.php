@@ -20,7 +20,7 @@ const PAYROLL_MONTH_NAMES = [
 
 function payrollGetEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, PAYROLL_EMPTY_VALUE);
 }
 
 function payrollFormatDateTimeValue($dateTimeString)
@@ -52,7 +52,7 @@ function payrollFormatTimeValue($dateTimeString)
         return PAYROLL_EMPTY_VALUE;
     }
 
-    return $dateTime->format("H:i");
+    return formatEgyptTimeForDisplay($dateTime, PAYROLL_EMPTY_VALUE);
 }
 
 function payrollIsAbsentAttendanceRow(array $row)

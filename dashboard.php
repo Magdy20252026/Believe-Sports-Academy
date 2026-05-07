@@ -56,7 +56,7 @@ function getDashboardAttendanceSectionSubtitle($isViewingToday)
 
 function formatDashboardEgyptTime(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("H:i");
+    return formatEgyptTimeForDisplay($dateTime, "—");
 }
 
 function formatDashboardAttendanceTime($dateTimeString)

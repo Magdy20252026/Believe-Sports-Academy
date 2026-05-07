@@ -1192,7 +1192,7 @@ function formatTrainingTimeLabel($value)
 
 function formatTrainingTimeDisplay($value)
 {
-    return formatTrainingTimeLabel($value);
+    return formatEgyptTimeForDisplay($value, "");
 }
 
 function countPlayersInGroup(PDO $pdo, $gameId, $groupId, $excludePlayerId = 0)
@@ -1296,7 +1296,7 @@ function formatPlayerCurrency($value)
 
 function formatPlayerAttendanceDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format('Y/m/d - H:i');
+    return formatEgyptDateTimeForDisplay($dateTime, PLAYER_ATTENDANCE_EMPTY_VALUE);
 }
 
 function formatPlayerAttendanceActualTime($dateTimeString)
@@ -1312,7 +1312,7 @@ function formatPlayerAttendanceActualTime($dateTimeString)
         return PLAYER_ATTENDANCE_EMPTY_VALUE;
     }
 
-    return $dateTime->format('H:i');
+    return formatEgyptTimeForDisplay($dateTime, PLAYER_ATTENDANCE_EMPTY_VALUE);
 }
 
 function formatPlayerCurrencyLabel($value)

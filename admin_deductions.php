@@ -25,7 +25,7 @@ function isValidAdminDeductionDate($date)
 
 function formatAdminDeductionEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, "");
 }
 
 function formatAdminDeductionDateTimeValue($dateTimeString)

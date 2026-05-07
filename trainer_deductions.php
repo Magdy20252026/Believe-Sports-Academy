@@ -25,7 +25,7 @@ function isValidTrainerDeductionDate($date)
 
 function formatTrainerDeductionEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, "");
 }
 
 function formatTrainerDeductionDateTimeValue($dateTimeString)

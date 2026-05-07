@@ -24,7 +24,7 @@ function isValidTrainerLoanDate($date)
 
 function formatTrainerLoanEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, "");
 }
 
 function formatTrainerLoanDateTimeValue($dateTimeString)

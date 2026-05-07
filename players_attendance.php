@@ -159,7 +159,7 @@ function buildPlayerAttendanceOffScheduleNotice(array $player, $dayKey)
     $scheduledDaysLabel = count($trainingDayLabels) > 0
         ? implode(" - ", $trainingDayLabels)
         : "غير محددة";
-    $scheduledTimeLabel = formatTrainingTimeLabel($player["training_time"] ?? "");
+    $scheduledTimeLabel = formatTrainingTimeDisplay($player["training_time"] ?? "");
     $scheduledTimeMessage = $scheduledTimeLabel !== ""
         ? " وميعاده المسجل " . $scheduledTimeLabel
         : "";
@@ -169,15 +169,18 @@ function buildPlayerAttendanceOffScheduleNotice(array $player, $dayKey)
 
 function buildPlayerAttendanceWrongTimeNotice(array $player, DateTimeImmutable $now)
 {
-    $scheduledTimeLabel = formatTrainingTimeLabel($player["training_time"] ?? "");
-    if ($scheduledTimeLabel === "") {
+    $scheduledTimeValue = formatTrainingTimeLabel($player["training_time"] ?? "");
+    if ($scheduledTimeValue === "") {
         return "";
     }
 
-    $currentTimeLabel = $now->format("H:i");
-    if ($currentTimeLabel === $scheduledTimeLabel) {
+    $currentTimeValue = $now->format("H:i");
+    if ($currentTimeValue === $scheduledTimeValue) {
         return "";
     }
+
+    $scheduledTimeLabel = formatEgyptTimeForDisplay($scheduledTimeValue, $scheduledTimeValue);
+    $currentTimeLabel = formatEgyptTimeForDisplay($currentTimeValue, $currentTimeValue);
 
     return "تنبيه: هذا ليس ميعاد تمرين اللاعب. الميعاد المسجل له هو " . $scheduledTimeLabel . " وتم تسجيل الحضور الآن في " . $currentTimeLabel . ".";
 }

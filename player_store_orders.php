@@ -177,12 +177,7 @@ try {
 } catch (PDOException $ignored) {}
 
 function soFmtDateTime($d) {
-    $d = trim((string)$d);
-    if ($d === '' || $d === '0000-00-00 00:00:00') return '—';
-    try {
-        $dt = new DateTimeImmutable($d, new DateTimeZone('Africa/Cairo'));
-        return $dt->format('Y/m/d - H:i');
-    } catch (Exception $e) { return '—'; }
+    return formatEgyptDateTimeForDisplay($d);
 }
 function soStatusLabel($s) {
     $m = ['pending' => ['قيد المراجعة','status-warning'], 'accepted' => ['مقبول','status-success'], 'rejected' => ['مرفوض','status-danger']];

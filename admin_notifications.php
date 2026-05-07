@@ -90,7 +90,7 @@ function isValidAdminNotificationDate($date)
 
 function formatAdminNotificationEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, "");
 }
 
 function formatAdminNotificationDateTimeValue($dateTimeString)
