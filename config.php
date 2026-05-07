@@ -6,6 +6,8 @@ $password = "vxP7d5Owzm";
 
 date_default_timezone_set("Africa/Cairo");
 
+const EGYPT_TIME_MERIDIEM_SEPARATOR = "\u{00A0}";
+
 function getEgyptDisplayTimeZone()
 {
     static $timeZone = null;
@@ -72,7 +74,7 @@ function formatEgyptTimeForDisplay($value, $emptyValue = "—")
         return (string)$emptyValue;
     }
 
-    return $dateTime->format("h:i") . "\u{00A0}" . formatEgyptMeridiemLabel($dateTime);
+    return $dateTime->format("h:i") . EGYPT_TIME_MERIDIEM_SEPARATOR . formatEgyptMeridiemLabel($dateTime);
 }
 
 function formatEgyptDateTimeForDisplay($value, $emptyValue = "—", $dateFormat = "Y/m/d", $separator = " - ")

@@ -169,17 +169,17 @@ function buildPlayerAttendanceOffScheduleNotice(array $player, $dayKey)
 
 function buildPlayerAttendanceWrongTimeNotice(array $player, DateTimeImmutable $now)
 {
-    $scheduledTimeValue = formatTrainingTimeLabel($player["training_time"] ?? "");
-    if ($scheduledTimeValue === "") {
+    $scheduledTime24h = formatTrainingTimeLabel($player["training_time"] ?? "");
+    if ($scheduledTime24h === "") {
         return "";
     }
 
     $currentTimeValue = $now->format("H:i");
-    if ($currentTimeValue === $scheduledTimeValue) {
+    if ($currentTimeValue === $scheduledTime24h) {
         return "";
     }
 
-    $scheduledTimeLabel = formatEgyptTimeForDisplay($scheduledTimeValue, $scheduledTimeValue);
+    $scheduledTimeLabel = formatEgyptTimeForDisplay($scheduledTime24h, $scheduledTime24h);
     $currentTimeLabel = formatEgyptTimeForDisplay($currentTimeValue, $currentTimeValue);
 
     return "تنبيه: هذا ليس ميعاد تمرين اللاعب. الميعاد المسجل له هو " . $scheduledTimeLabel . " وتم تسجيل الحضور الآن في " . $currentTimeLabel . ".";
