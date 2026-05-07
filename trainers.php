@@ -356,6 +356,30 @@ function normalizeTrainerWeeklyScheduleInput($scheduleInput)
     return $normalizedSchedule;
 }
 
+function getTrainerDefaultWorkingScheduleInput(array $scheduleInput, array $daysOff)
+{
+    foreach (TRAINER_DAY_OPTIONS as $dayKey => $_dayLabel) {
+        if (in_array($dayKey, $daysOff, true)) {
+            continue;
+        }
+
+        $daySchedule = $scheduleInput[$dayKey] ?? [];
+        $attendanceTime = normalizeTrainerTimeInputValue($daySchedule["attendance_time"] ?? "");
+        $departureTime = normalizeTrainerTimeInputValue($daySchedule["departure_time"] ?? "");
+
+        if ($attendanceTime === "" || $departureTime === "") {
+            continue;
+        }
+
+        return [
+            "attendance_time" => $attendanceTime,
+            "departure_time" => $departureTime,
+        ];
+    }
+
+    return null;
+}
+
 function resolveTrainerWeeklySchedule(array $storedSchedules, array $daysOff, $defaultAttendanceTime = "", $defaultDepartureTime = "")
 {
     $resolvedSchedule = [];
@@ -547,6 +571,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 "weekly_schedule" => normalizeTrainerWeeklyScheduleInput($_POST["weekly_schedule"] ?? []),
             ];
             $resolvedWeeklySchedule = [];
+            $defaultWorkingScheduleInput = getTrainerDefaultWorkingScheduleInput($formData["weekly_schedule"], $formData["days_off"]);
 
             if ($formData["name"] === "") {
                 $error = "اسم المدرب مطلوب.";
@@ -573,6 +598,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $daySchedule = $formData["weekly_schedule"][$dayKey] ?? [];
                     $attendanceTime = normalizeTrainerTimeInputValue($daySchedule["attendance_time"] ?? "");
                     $departureTime = normalizeTrainerTimeInputValue($daySchedule["departure_time"] ?? "");
+
+                    if ($attendanceTime === "" && $departureTime === "") {
+                        if ($defaultWorkingScheduleInput !== null) {
+                            $attendanceTime = $defaultWorkingScheduleInput["attendance_time"];
+                            $departureTime = $defaultWorkingScheduleInput["departure_time"];
+                        } else {
+                            $error = "حدد ميعاد الحضور والانصراف ليوم عمل واحد على الأقل.";
+                            break;
+                        }
+                    }
 
                     if ($attendanceTime === "" || $departureTime === "") {
                         $error = "حدد ميعاد الحضور والانصراف ليوم " . $dayLabel . ".";
@@ -968,7 +1003,7 @@ $totalSalaryAmount = (float)($statsRow["total_salary"] ?? 0);
                     <div class="trainer-form-section">
                         <div class="trainer-section-heading">
                             <h4 class="trainer-section-title">الجدول الأسبوعي</h4>
-                            <p class="trainer-section-subtitle">حدد ميعاد الحضور والانصراف لكل يوم عمل، وسيتم تجاهل اليوم المحدد كإجازة.</p>
+                            <p class="trainer-section-subtitle">حدد ميعاد الحضور والانصراف لأيام العمل، ويمكن إدخال ميعاد يوم واحد فقط ليُستخدم تلقائيًا لباقي الأيام التي تُترك فارغة، وسيتم تجاهل اليوم المحدد كإجازة.</p>
                         </div>
                         <div class="trainer-weekly-schedule-grid">
                             <?php foreach (TRAINER_DAY_OPTIONS as $dayKey => $dayLabel): ?>
