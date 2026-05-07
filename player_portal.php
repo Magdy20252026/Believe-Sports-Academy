@@ -296,22 +296,14 @@ function pportFmtTime($time) {
     if (strlen($time) < 5) return "—";
     $time = substr($time, 0, 5);
     if (!preg_match('/^(\d{2}):(\d{2})$/', $time, $m)) return "—";
-    $hour = (int)$m[1];
-    $min = $m[2];
-    $period = $hour >= 12 ? "م" : "ص";
-    $display = ($hour === 0 || $hour === 12) ? 12 : ($hour % 12);
-    return str_pad((string)$display, 2, "0", STR_PAD_LEFT) . ":" . $min . " " . $period;
+    return $m[1] . ":" . $m[2];
 }
 function pportFmtDateTime($d) {
     $d = trim((string)$d);
     if ($d === "" || $d === "0000-00-00 00:00:00") return "—";
     try {
         $dt = new DateTimeImmutable($d, new DateTimeZone("Africa/Cairo"));
-        $h = (int)$dt->format("G");
-        $m = $dt->format("i");
-        $period = $h >= 12 ? "م" : "ص";
-        $hh = $h % 12; if ($hh === 0) $hh = 12;
-        return $dt->format("Y/m/d") . " - " . str_pad((string)$hh, 2, "0", STR_PAD_LEFT) . ":" . $m . " " . $period;
+        return $dt->format("Y/m/d - H:i");
     } catch (Exception $ex) { return "—"; }
 }
 function pportFmtCurrency($a) { return number_format((float)$a, 2) . " ج.م"; }

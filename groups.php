@@ -1308,6 +1308,13 @@ document.addEventListener('DOMContentLoaded', function () {
         input.value = selectedValue || '';
         input.required = true;
         input.className = 'group-training-time-input';
+        if (typeof window.__APP_UI_ENHANCE_TIME_INPUT__ === 'function') {
+            window.__APP_UI_ENHANCE_TIME_INPUT__(input);
+        } else {
+            input.setAttribute('lang', 'en-GB');
+            input.setAttribute('inputmode', 'numeric');
+            input.setAttribute('dir', 'ltr');
+        }
         return input;
     };
 

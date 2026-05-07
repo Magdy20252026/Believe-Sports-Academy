@@ -564,7 +564,7 @@ document.addEventListener("DOMContentLoaded", function () {
         day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
-        hour12: true
+        hour12: false
     });
     const updateDateTime = function () {
         const parts = formatter.formatToParts(new Date());
@@ -573,7 +573,7 @@ document.addEventListener("DOMContentLoaded", function () {
             values[part.type] = part.value;
         });
         if (dateTimeBadge) {
-            dateTimeBadge.textContent = values.year + "/" + values.month + "/" + values.day + " - " + values.hour + ":" + values.minute + " " + (values.dayPeriod || "");
+            dateTimeBadge.textContent = values.year + "/" + values.month + "/" + values.day + " - " + values.hour + ":" + values.minute;
         }
     };
     updateDateTime();

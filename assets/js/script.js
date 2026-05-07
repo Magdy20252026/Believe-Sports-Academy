@@ -106,7 +106,7 @@
                 day: "2-digit",
                 hour: "2-digit",
                 minute: "2-digit",
-                hour12: true
+                hour12: false
             });
         }
 
@@ -200,11 +200,29 @@
         document.querySelectorAll('input[type="date"]').forEach(enhanceDateInput);
     }
 
+    function enhanceTimeInput(timeInput) {
+        if (!timeInput || timeInput.dataset.time24Bound === "1") return;
+        timeInput.dataset.time24Bound = "1";
+        timeInput.setAttribute("lang", "en-GB");
+        timeInput.setAttribute("inputmode", "numeric");
+        timeInput.setAttribute("dir", "ltr");
+        if (!timeInput.getAttribute("step")) {
+            timeInput.setAttribute("step", "60");
+        }
+    }
+
+    function ensureTimeInputs() {
+        document.querySelectorAll('input[type="time"]').forEach(enhanceTimeInput);
+    }
+
+    window.__APP_UI_ENHANCE_TIME_INPUT__ = enhanceTimeInput;
+
     window.__APP_UI_INIT__ = function () {
         ensureTheme();
         ensureSidebar();
         ensureEgyptClock();
         ensureDateInputs();
+        ensureTimeInputs();
     };
 
     window.__APP_UI_BOOTSTRAPPED__ = true;
