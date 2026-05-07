@@ -572,7 +572,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $departureTime = normalizeAdminTimeInputValue($daySchedule["departure_time"] ?? "");
 
                     if ($attendanceTime === "" && $departureTime === "") {
-                        if (is_array($defaultWorkingScheduleInput)) {
+                        if ($defaultWorkingScheduleInput !== null) {
                             $attendanceTime = $defaultWorkingScheduleInput["attendance_time"];
                             $departureTime = $defaultWorkingScheduleInput["departure_time"];
                         } else {
