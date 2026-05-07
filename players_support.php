@@ -1192,24 +1192,7 @@ function formatTrainingTimeLabel($value)
 
 function formatTrainingTimeDisplay($value)
 {
-    $label = formatTrainingTimeLabel($value);
-    if ($label === '') {
-        return '';
-    }
-
-    if (preg_match('/^(\d{2}):(\d{2})$/', $label, $matches) !== 1) {
-        return $label;
-    }
-
-    $hour = (int)$matches[1];
-    $minute = $matches[2];
-    $period = $hour >= 12 ? 'م' : 'ص';
-    $displayHour = $hour % 12;
-    if ($displayHour === 0) {
-        $displayHour = 12;
-    }
-
-    return str_pad((string)$displayHour, 2, '0', STR_PAD_LEFT) . ':' . $minute . ' ' . $period;
+    return formatTrainingTimeLabel($value);
 }
 
 function countPlayersInGroup(PDO $pdo, $gameId, $groupId, $excludePlayerId = 0)
@@ -1313,15 +1296,7 @@ function formatPlayerCurrency($value)
 
 function formatPlayerAttendanceDateTimeLabel(DateTimeInterface $dateTime)
 {
-    $hour = (int)$dateTime->format('G');
-    $minute = $dateTime->format('i');
-    $period = $hour >= 12 ? 'م' : 'ص';
-    $displayHour = $hour % 12;
-    if ($displayHour === 0) {
-        $displayHour = 12;
-    }
-
-    return $dateTime->format('Y/m/d') . ' - ' . str_pad((string)$displayHour, 2, '0', STR_PAD_LEFT) . ':' . $minute . ' ' . $period;
+    return $dateTime->format('Y/m/d') . ' - ' . $dateTime->format('H:i');
 }
 
 function formatPlayerAttendanceActualTime($dateTimeString)
@@ -1337,15 +1312,7 @@ function formatPlayerAttendanceActualTime($dateTimeString)
         return PLAYER_ATTENDANCE_EMPTY_VALUE;
     }
 
-    $hour = (int)$dateTime->format('G');
-    $minute = $dateTime->format('i');
-    $period = $hour >= 12 ? 'م' : 'ص';
-    $displayHour = $hour % 12;
-    if ($displayHour === 0) {
-        $displayHour = 12;
-    }
-
-    return str_pad((string)$displayHour, 2, '0', STR_PAD_LEFT) . ':' . $minute . ' ' . $period;
+    return $dateTime->format('H:i');
 }
 
 function formatPlayerCurrencyLabel($value)

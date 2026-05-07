@@ -56,15 +56,7 @@ function getDashboardAttendanceSectionSubtitle($isViewingToday)
 
 function formatDashboardEgyptTime(DateTimeInterface $dateTime)
 {
-    $hour = (int)$dateTime->format("G");
-    $minute = $dateTime->format("i");
-    $period = $hour >= 12 ? "م" : "ص";
-    $displayHour = $hour % 12;
-    if ($displayHour === 0) {
-        $displayHour = 12;
-    }
-
-    return str_pad((string)$displayHour, 2, "0", STR_PAD_LEFT) . ":" . $minute . " " . $period;
+    return $dateTime->format("H:i");
 }
 
 function formatDashboardAttendanceTime($dateTimeString)
@@ -312,6 +304,51 @@ function fetchDashboardExpiredSubscriptionAlerts(PDO $pdo, $gameId, DateTimeImmu
     return $alerts;
 }
 
+function fetchDashboardBirthdayAlerts(PDO $pdo, $gameId, DateTimeImmutable $today)
+{
+    if ((int)$gameId <= 0) {
+        return [];
+    }
+
+    $todayMonthDay = $today->format("m-d");
+    $stmt = $pdo->prepare(
+        "SELECT id, barcode, name, phone, COALESCE(phone2, '') AS phone2, group_name, group_level, trainer_name, birth_date
+         FROM players
+         WHERE game_id = ?
+           AND birth_date IS NOT NULL
+           AND DATE_FORMAT(birth_date, '%m-%d') = ?
+         ORDER BY name ASC, id DESC"
+    );
+    $stmt->execute([(int)$gameId, $todayMonthDay]);
+
+    $alerts = [];
+    foreach ($stmt->fetchAll() as $player) {
+        $birthDate = trim((string)($player["birth_date"] ?? ""));
+        $playerAge = calculatePlayerAgeFromBirthDate($birthDate, $today);
+        $alerts[] = [
+            "alert_key" => buildDashboardNotificationKey("birthday", [
+                (int)($player["id"] ?? 0),
+                $today->format("Y-m-d"),
+            ]),
+            "type" => "birthday",
+            "barcode" => (string)($player["barcode"] ?? ""),
+            "name" => (string)($player["name"] ?? ""),
+            "phone" => (string)($player["phone"] ?? ""),
+            "phone2" => (string)($player["phone2"] ?? ""),
+            "group_name" => (string)($player["group_name"] ?? ""),
+            "group_level" => (string)($player["group_level"] ?? ""),
+            "trainer_name" => (string)($player["trainer_name"] ?? ""),
+            "detail" => $playerAge > 0
+                ? "اليوم عيد ميلاده ويتم عامه رقم " . ($playerAge + 1) . "."
+                : "اليوم عيد ميلاده.",
+            "alert_date" => $today->format("Y-m-d"),
+            "alert_time" => "—",
+        ];
+    }
+
+    return $alerts;
+}
+
 function fetchDashboardStaffAttendanceAlerts(PDO $pdo, $gameId, DateTimeImmutable $today)
 {
     if ((int)$gameId <= 0) {
@@ -419,11 +456,12 @@ function fetchDashboardStaffAttendanceAlerts(PDO $pdo, $gameId, DateTimeImmutabl
 }
 
 $currentUserId = (int)($_SESSION["user_id"] ?? 0);
+$birthdayAlerts = fetchDashboardBirthdayAlerts($pdo, $currentGameId, $egyptNow);
 $absenceAlerts = fetchDashboardConsecutiveAbsenceAlerts($pdo, $currentGameId);
 $expiredSubscriptionAlerts = fetchDashboardExpiredSubscriptionAlerts($pdo, $currentGameId, $egyptNow);
 $staffAttendanceAlerts = fetchDashboardStaffAttendanceAlerts($pdo, $currentGameId, $egyptNow);
 $allDashboardAlertKeys = [];
-foreach ([$absenceAlerts, $expiredSubscriptionAlerts, $staffAttendanceAlerts] as $alertGroup) {
+foreach ([$birthdayAlerts, $absenceAlerts, $expiredSubscriptionAlerts, $staffAttendanceAlerts] as $alertGroup) {
     foreach ($alertGroup as $alertRow) {
         $alertKey = trim((string)($alertRow["alert_key"] ?? ""));
         if ($alertKey !== "") {
@@ -436,7 +474,7 @@ $readDashboardAlertLookup = array_fill_keys(
     true
 );
 $unreadAlertKeys = [];
-foreach (["absenceAlerts", "expiredSubscriptionAlerts", "staffAttendanceAlerts"] as $alertGroupName) {
+foreach (["birthdayAlerts", "absenceAlerts", "expiredSubscriptionAlerts", "staffAttendanceAlerts"] as $alertGroupName) {
     foreach (${$alertGroupName} as $index => $alertRow) {
         $alertKey = trim((string)($alertRow["alert_key"] ?? ""));
         $isRead = $alertKey !== "" && isset($readDashboardAlertLookup[$alertKey]);
@@ -446,7 +484,7 @@ foreach (["absenceAlerts", "expiredSubscriptionAlerts", "staffAttendanceAlerts"]
         }
     }
 }
-$visibleNotificationsCount = count($absenceAlerts) + count($expiredSubscriptionAlerts) + count($staffAttendanceAlerts);
+$visibleNotificationsCount = count($birthdayAlerts) + count($absenceAlerts) + count($expiredSubscriptionAlerts) + count($staffAttendanceAlerts);
 $unreadNotificationsCount = count($unreadAlertKeys);
 ?>
 <!DOCTYPE html>
@@ -503,6 +541,20 @@ $unreadNotificationsCount = count($unreadAlertKeys);
                         <?php if ($visibleNotificationsCount === 0): ?>
                             <div style="padding:18px; text-align:center; color:#64748b;">لا توجد إشعارات حالياً</div>
                         <?php else: ?>
+                            <?php if (count($birthdayAlerts) > 0): ?>
+                                <div style="padding:10px 14px; background:#fff7ed; color:#c2410c; font-weight:700; border-bottom:1px solid #fed7aa;">
+                                    🎂 أعياد ميلاد اللاعبين اليوم (<?php echo count($birthdayAlerts); ?>)
+                                </div>
+                                <?php foreach ($birthdayAlerts as $a): ?>
+                                    <div style="padding:10px 14px; border-bottom:1px solid #f1f5f9;">
+                                        <div style="font-weight:800; color:#0f172a; margin-bottom:4px;"><?php echo htmlspecialchars($a["name"], ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <div style="font-size:13px; color:#475569; margin-bottom:2px;">📊 الباركود: <strong><?php echo htmlspecialchars($a["barcode"] !== "" ? $a["barcode"] : "—", ENT_QUOTES, 'UTF-8'); ?></strong></div>
+                                        <div style="font-size:13px; color:#475569;">📞 <?php echo htmlspecialchars($a["phone"] !== "" ? $a["phone"] : "—", ENT_QUOTES, 'UTF-8'); ?><?php if ($a["phone2"] !== ""): ?> | 📱 <?php echo htmlspecialchars($a["phone2"], ENT_QUOTES, 'UTF-8'); ?><?php endif; ?></div>
+                                        <div style="font-size:12px; color:#c2410c; margin-top:4px;"><?php echo htmlspecialchars($a["detail"], ENT_QUOTES, 'UTF-8'); ?></div>
+                                        <div style="font-size:12px; color:#64748b; margin-top:4px;">🗓️ التاريخ: <?php echo htmlspecialchars($a["alert_date"] !== "" ? $a["alert_date"] : "—", ENT_QUOTES, 'UTF-8'); ?> | ⏰ الوقت: <?php echo htmlspecialchars($a["alert_time"] !== "" ? $a["alert_time"] : "—", ENT_QUOTES, 'UTF-8'); ?></div>
+                                    </div>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
                             <?php if (count($absenceAlerts) > 0): ?>
                                 <div style="padding:10px 14px; background:#fef2f2; color:#b91c1c; font-weight:700; border-bottom:1px solid #fee2e2;">
                                     ⛔ غياب يومين متتاليين (<?php echo count($absenceAlerts); ?>)

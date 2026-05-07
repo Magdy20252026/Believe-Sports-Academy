@@ -170,21 +170,26 @@ function buildPlayerAttendanceOffScheduleNotice(array $player, $dayKey)
 
 function getPlayerAttendanceLateCutoffDateTime(array $player, DateTimeImmutable $today)
 {
-    $trainingTime = normalizeTrainingTimeValue($player["training_time"] ?? "");
-    if ($trainingTime === "") {
-        return null;
-    }
-
-    $scheduledDateTime = DateTimeImmutable::createFromFormat(
-        "Y-m-d H:i:s",
-        $today->format("Y-m-d") . " " . $trainingTime,
-        new DateTimeZone("Africa/Cairo")
-    );
+    $scheduledDateTime = getPlayerAttendanceScheduledDateTime($player, $today);
     if (!($scheduledDateTime instanceof DateTimeImmutable)) {
         return null;
     }
 
     return $scheduledDateTime->modify("+" . PLAYER_ATTENDANCE_LATE_LIMIT_MINUTES . " minutes");
+}
+
+function getPlayerAttendanceScheduledDateTime(array $player, DateTimeImmutable $today)
+{
+    $trainingTime = normalizeTrainingTimeValue($player["training_time"] ?? "");
+    if ($trainingTime === "") {
+        return null;
+    }
+
+    return DateTimeImmutable::createFromFormat(
+        "Y-m-d H:i:s",
+        $today->format("Y-m-d") . " " . $trainingTime,
+        new DateTimeZone("Africa/Cairo")
+    ) ?: null;
 }
 
 function buildPlayerAttendanceLateBlockMessage(array $player, DateTimeImmutable $lateCutoff)
@@ -203,17 +208,8 @@ function buildPlayerAttendanceLateBlockMessage(array $player, DateTimeImmutable 
 
 function calculatePlayerAttendanceMinutesLate(array $player, DateTimeImmutable $now, DateTimeImmutable $today)
 {
-    $trainingTime = normalizeTrainingTimeValue($player["training_time"] ?? "");
-    if ($trainingTime === "") {
-        return 0;
-    }
-
-    try {
-        $scheduledDateTime = new DateTimeImmutable(
-            $today->format("Y-m-d") . " " . $trainingTime,
-            new DateTimeZone("Africa/Cairo")
-        );
-    } catch (Exception $exception) {
+    $scheduledDateTime = getPlayerAttendanceScheduledDateTime($player, $today);
+    if (!($scheduledDateTime instanceof DateTimeImmutable)) {
         return 0;
     }
 
@@ -239,6 +235,22 @@ function buildPlayerAttendanceLateNotificationMessage(array $player, DateTimeImm
     }
 
     return implode("\n", $messageLines);
+}
+
+function buildPlayerAttendanceWrongTimeNotice(array $player, DateTimeImmutable $now, DateTimeImmutable $today)
+{
+    $scheduledDateTime = getPlayerAttendanceScheduledDateTime($player, $today);
+    if (!($scheduledDateTime instanceof DateTimeImmutable)) {
+        return "";
+    }
+
+    if ($scheduledDateTime->format("H:i") === $now->format("H:i")) {
+        return "";
+    }
+
+    $playerName = trim((string)($player["name"] ?? ""));
+    $playerLabel = $playerName !== "" ? "اللاعب " . $playerName : "اللاعب";
+    return "تنبيه: هذا ليس ميعاد تمرين " . $playerLabel . ". ميعاد اللاعب هو " . $scheduledDateTime->format("H:i") . ".";
 }
 
 function canPlayerReceiveAttendanceMark(array $player, DateTimeImmutable $today, $dayKey, $allowExistingTodayRecord = false)
@@ -843,7 +855,9 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
             ];
         }
 
-        if ($lateCutoff instanceof DateTimeImmutable && $now >= $lateCutoff) {
+        $canReplaceAutoAbsence = $existingRecord
+            && (($existingRecord["attendance_status"] ?? "") === PLAYER_ATTENDANCE_STATUS_ABSENT);
+        if ($lateCutoff instanceof DateTimeImmutable && $now >= $lateCutoff && !$canReplaceAutoAbsence) {
             if (!$existingRecord) {
                 $insertAbsentStmt = $pdo->prepare(
                     "INSERT INTO player_attendance (
@@ -1034,6 +1048,11 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
         }
         if (!$isScheduledDay) {
             $message .= " " . buildPlayerAttendanceOffScheduleNotice($player, $dayKey);
+        } else {
+            $wrongTimeNotice = buildPlayerAttendanceWrongTimeNotice($player, $now, $today);
+            if ($wrongTimeNotice !== "") {
+                $message .= " " . $wrongTimeNotice;
+            }
         }
 
         return [
