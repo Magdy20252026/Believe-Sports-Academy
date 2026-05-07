@@ -181,10 +181,7 @@ function soFmtDateTime($d) {
     if ($d === '' || $d === '0000-00-00 00:00:00') return '—';
     try {
         $dt = new DateTimeImmutable($d, new DateTimeZone('Africa/Cairo'));
-        $h = (int)$dt->format('G'); $m = $dt->format('i');
-        $period = $h >= 12 ? 'م' : 'ص';
-        $hh = $h % 12; if ($hh === 0) $hh = 12;
-        return $dt->format('Y/m/d') . ' - ' . str_pad((string)$hh, 2, '0', STR_PAD_LEFT) . ':' . $m . ' ' . $period;
+        return $dt->format('Y/m/d - H:i');
     } catch (Exception $e) { return '—'; }
 }
 function soStatusLabel($s) {

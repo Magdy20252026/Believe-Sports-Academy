@@ -25,15 +25,7 @@ function isValidTrainerDeductionDate($date)
 
 function formatTrainerDeductionEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    $hour = (int)$dateTime->format("G");
-    $minute = $dateTime->format("i");
-    $period = $hour >= 12 ? "م" : "ص";
-    $displayHour = $hour % 12;
-    if ($displayHour === 0) {
-        $displayHour = 12;
-    }
-
-    return $dateTime->format("Y/m/d") . " - " . str_pad((string)$displayHour, 2, "0", STR_PAD_LEFT) . ":" . $minute . " " . $period;
+    return $dateTime->format("Y/m/d - H:i");
 }
 
 function formatTrainerDeductionDateTimeValue($dateTimeString)
