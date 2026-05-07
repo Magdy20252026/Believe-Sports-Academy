@@ -38,10 +38,7 @@ if (!$admin) {
 }
 
 function adminPortalFormatTime($time) {
-    $time = trim((string)$time);
-    if (strlen($time) < 5) return "—";
-    $time = substr($time, 0, 5);
-    return preg_match('/^\d{2}:\d{2}$/', $time) === 1 ? $time : "—";
+    return formatEgyptTimeForDisplay($time);
 }
 
 function adminPortalFormatDate($dateStr) {
@@ -56,14 +53,7 @@ function adminPortalFormatDate($dateStr) {
 }
 
 function adminPortalFormatDatetime($datetimeStr) {
-    $datetimeStr = trim((string)$datetimeStr);
-    if ($datetimeStr === "" || $datetimeStr === "0000-00-00 00:00:00") return "—";
-    try {
-        $dt = new DateTimeImmutable($datetimeStr, new DateTimeZone("Africa/Cairo"));
-        return $dt->format("Y/m/d - H:i");
-    } catch (Exception $ignored) {
-        return "—";
-    }
+    return formatEgyptDateTimeForDisplay($datetimeStr);
 }
 
 function adminPortalFormatCurrency($amount) {

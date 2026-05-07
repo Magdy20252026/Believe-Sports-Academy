@@ -72,12 +72,12 @@ function formatTrainerAttendanceTimeForDisplay($time)
         return TRAINER_ATTENDANCE_EMPTY_VALUE;
     }
 
-    return $time;
+    return formatEgyptTimeForDisplay($time, TRAINER_ATTENDANCE_EMPTY_VALUE);
 }
 
 function formatTrainerAttendanceDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, TRAINER_ATTENDANCE_EMPTY_VALUE);
 }
 
 function formatTrainerAttendanceActualTime($dateTimeString)
@@ -93,7 +93,7 @@ function formatTrainerAttendanceActualTime($dateTimeString)
         return TRAINER_ATTENDANCE_EMPTY_VALUE;
     }
 
-    return $dateTime->format("H:i");
+    return formatEgyptTimeForDisplay($dateTime, TRAINER_ATTENDANCE_EMPTY_VALUE);
 }
 
 function normalizeTrainerAttendanceDayKeys($dayKeysValue)

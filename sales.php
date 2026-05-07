@@ -344,7 +344,7 @@ function formatSalesDateTime($value)
         return "—";
     }
 
-    return $dateTime->format("Y-m-d • H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, "—", "Y-m-d", " • ");
 }
 
 function fetchSalesCategories(PDO $pdo, $gameId)

@@ -101,7 +101,7 @@ function isValidPlayerNotificationDate($date)
 
 function formatPlayerNotificationEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, "");
 }
 
 function formatPlayerNotificationDateTimeValue($dateTimeString)

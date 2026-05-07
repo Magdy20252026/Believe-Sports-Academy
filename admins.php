@@ -219,12 +219,12 @@ function formatAdminTimeForDisplay($time)
         return "";
     }
 
-    return $time;
+    return formatEgyptTimeForDisplay($time, "");
 }
 
 function formatAdminEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, "");
 }
 
 function fetchAdminDayKeys(PDO $pdo, $adminId)

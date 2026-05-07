@@ -237,12 +237,12 @@ function formatTrainerTimeForDisplay($time)
         return "";
     }
 
-    return $time;
+    return formatEgyptTimeForDisplay($time, "");
 }
 
 function formatEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, "");
 }
 
 function fetchTrainerDayKeys(PDO $pdo, $trainerId)

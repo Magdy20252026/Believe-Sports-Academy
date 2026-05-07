@@ -66,12 +66,12 @@ function formatAdminAttendanceTimeForDisplay($time)
         return ADMIN_ATTENDANCE_EMPTY_VALUE;
     }
 
-    return $time;
+    return formatEgyptTimeForDisplay($time, ADMIN_ATTENDANCE_EMPTY_VALUE);
 }
 
 function formatAdminAttendanceDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, ADMIN_ATTENDANCE_EMPTY_VALUE);
 }
 
 function formatAdminAttendanceActualTime($dateTimeString)
@@ -87,7 +87,7 @@ function formatAdminAttendanceActualTime($dateTimeString)
         return ADMIN_ATTENDANCE_EMPTY_VALUE;
     }
 
-    return $dateTime->format("H:i");
+    return formatEgyptTimeForDisplay($dateTime, ADMIN_ATTENDANCE_EMPTY_VALUE);
 }
 
 function normalizeAdminAttendanceDayKeys($dayKeysValue)

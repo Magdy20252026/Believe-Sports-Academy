@@ -24,7 +24,7 @@ function isValidAdminLoanDate($date)
 
 function formatAdminLoanEgyptDateTimeLabel(DateTimeInterface $dateTime)
 {
-    return $dateTime->format("Y/m/d - H:i");
+    return formatEgyptDateTimeForDisplay($dateTime, "");
 }
 
 function formatAdminLoanDateTimeValue($dateTimeString)

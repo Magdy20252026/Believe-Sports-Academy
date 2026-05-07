@@ -17,7 +17,7 @@ $settings = $settingsStmt ? ($settingsStmt->fetch(PDO::FETCH_ASSOC) ?: []) : [];
 $sidebarName = $settings["academy_name"] ?? ($_SESSION["site_name"] ?? "أكاديمية رياضية");
 
 $egyptNow = new DateTime("now", new DateTimeZone("Africa/Cairo"));
-$egyptDateTimeLabel = $egyptNow->format("Y/m/d H:i");
+$egyptDateTimeLabel = formatEgyptDateTimeForDisplay($egyptNow, "");
 
 $tab = $_GET["tab"] ?? "daily";
 if (!in_array($tab, ["daily", "weekly", "monthly"], true)) {

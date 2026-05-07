@@ -292,19 +292,10 @@ function pportFmtDate($d) {
     } catch (Exception $ex) { return "—"; }
 }
 function pportFmtTime($time) {
-    $time = trim((string)$time);
-    if (strlen($time) < 5) return "—";
-    $time = substr($time, 0, 5);
-    if (!preg_match('/^(\d{2}):(\d{2})$/', $time, $m)) return "—";
-    return $m[1] . ":" . $m[2];
+    return formatEgyptTimeForDisplay($time);
 }
 function pportFmtDateTime($d) {
-    $d = trim((string)$d);
-    if ($d === "" || $d === "0000-00-00 00:00:00") return "—";
-    try {
-        $dt = new DateTimeImmutable($d, new DateTimeZone("Africa/Cairo"));
-        return $dt->format("Y/m/d - H:i");
-    } catch (Exception $ex) { return "—"; }
+    return formatEgyptDateTimeForDisplay($d);
 }
 function pportFmtCurrency($a) { return number_format((float)$a, 2) . " ج.م"; }
 function pportEsc($s) { return htmlspecialchars((string)$s, ENT_QUOTES, "UTF-8"); }

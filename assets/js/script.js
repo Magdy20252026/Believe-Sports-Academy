@@ -106,7 +106,7 @@
                 day: "2-digit",
                 hour: "2-digit",
                 minute: "2-digit",
-                hour12: false
+                hour12: true
             });
         }
 
@@ -203,7 +203,7 @@
     function enhanceTimeInput(timeInput) {
         if (!timeInput || timeInput.dataset.time24Bound === "1") return;
         timeInput.dataset.time24Bound = "1";
-        timeInput.setAttribute("lang", "en-GB");
+        timeInput.setAttribute("lang", "en-US");
         timeInput.setAttribute("inputmode", "numeric");
         timeInput.setAttribute("dir", "ltr");
         if (!timeInput.getAttribute("step")) {
