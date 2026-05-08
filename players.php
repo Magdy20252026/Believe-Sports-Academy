@@ -205,7 +205,7 @@ $groupsStmt = $pdo->prepare(
 $groupsStmt->execute([$currentGameId]);
 $groups = $groupsStmt->fetchAll();
 $groupMap = [];
-foreach ($groups as $group) {
+foreach ($groups as &$group) {
     $group['current_players_count'] = $groupPlayerCounts[(int)$group['id']] ?? 0;
     $group['training_day_keys_list'] = getPlayerTrainingDayKeys($group['training_day_keys'] ?? '');
     $group['training_day_times_map'] = decodePlayerScheduleDayTimes(
@@ -222,7 +222,7 @@ foreach ($groups as $group) {
     );
     $groupMap[(int)$group['id']] = $group;
 }
-$groups = array_values($groupMap);
+unset($group);
 
 $gameLevelOptions = fetchGameLevels($pdo, $currentGameId);
 
@@ -1824,6 +1824,8 @@ document.addEventListener('DOMContentLoaded', function () {
             input.value = dayKey;
             input.checked = selectedDays.indexOf(dayKey) !== -1;
             input.disabled = true;
+            input.setAttribute('aria-label', 'يتم تحديد يوم التدريب تلقائيًا من المجموعة المختارة');
+            input.title = 'يتم تحديد يوم التدريب تلقائيًا من المجموعة المختارة';
             const span = document.createElement('span');
             span.textContent = dayLabels[dayKey];
             wrapper.appendChild(input);
