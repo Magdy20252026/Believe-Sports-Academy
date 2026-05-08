@@ -205,7 +205,7 @@ $groupsStmt = $pdo->prepare(
 $groupsStmt->execute([$currentGameId]);
 $groups = $groupsStmt->fetchAll();
 $groupMap = [];
-foreach ($groups as &$group) {
+foreach ($groups as $groupIndex => $group) {
     $group['current_players_count'] = $groupPlayerCounts[(int)$group['id']] ?? 0;
     $group['training_day_keys_list'] = getPlayerTrainingDayKeys($group['training_day_keys'] ?? '');
     $group['training_day_times_map'] = decodePlayerScheduleDayTimes(
@@ -220,9 +220,9 @@ foreach ($groups as &$group) {
     $group['training_time_label'] = formatTrainingTimeDisplay(
         getPrimaryPlayerScheduleTime($group['training_day_keys_list'], $group['training_day_times_map'])
     );
+    $groups[$groupIndex] = $group;
     $groupMap[(int)$group['id']] = $group;
 }
-unset($group);
 
 $gameLevelOptions = fetchGameLevels($pdo, $currentGameId);
 
