@@ -52,6 +52,9 @@ function ensureSportsGroupsTable(PDO $pdo)
         "assistant_trainer_name" => "ALTER TABLE sports_groups ADD COLUMN assistant_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER trainer_name",
         "ballet_trainer_name" => "ALTER TABLE sports_groups ADD COLUMN ballet_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER assistant_trainer_name",
         "academy_percentage" => "ALTER TABLE sports_groups ADD COLUMN academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER ballet_trainer_name",
+        "walkers_price" => "ALTER TABLE sports_groups ADD COLUMN walkers_price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER academy_percentage",
+        "other_weapons_price" => "ALTER TABLE sports_groups ADD COLUMN other_weapons_price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER walkers_price",
+        "civilian_price" => "ALTER TABLE sports_groups ADD COLUMN civilian_price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER other_weapons_price",
     ];
 
     $existingColumnsStmt = $pdo->prepare(

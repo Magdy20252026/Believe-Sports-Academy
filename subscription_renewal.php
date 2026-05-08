@@ -8,6 +8,7 @@ require_once 'players_support.php';
 requireAuthenticatedUser();
 requireMenuAccess('subscription-renewal');
 ensurePlayersTables($pdo);
+ensurePlayerSportsGroupsSchema($pdo);
 
 date_default_timezone_set('Africa/Cairo');
 

@@ -9,6 +9,7 @@ require_once 'game_levels_support.php';
 requireAuthenticatedUser();
 requireMenuAccess('players');
 ensurePlayersTables($pdo);
+ensurePlayerSportsGroupsSchema($pdo);
 ensureGameLevelsTable($pdo);
 
 if (!isset($_SESSION['players_csrf_token'])) {

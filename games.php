@@ -113,6 +113,34 @@ function gameDependentTables(PDO $pdo, $gameId)
     return $blocking;
 }
 
+function buildGameLevelFormRows($levelNames, $levelDetails)
+{
+    $levelNames = is_array($levelNames) ? array_values($levelNames) : [];
+    $levelDetails = is_array($levelDetails) ? array_values($levelDetails) : [];
+    $rowCount = max(count($levelNames), count($levelDetails), 1);
+    $rows = [];
+
+    for ($index = 0; $index < $rowCount; $index++) {
+        $rows[] = [
+            "level_name" => trim((string)($levelNames[$index] ?? "")),
+            "level_details" => trim((string)($levelDetails[$index] ?? "")),
+        ];
+    }
+
+    return $rows;
+}
+
+function hasAnyGameLevelFormRowInput(array $rows)
+{
+    foreach ($rows as $row) {
+        if (trim((string)($row["level_name"] ?? "")) !== "" || trim((string)($row["level_details"] ?? "")) !== "") {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 if (!isset($_SESSION["games_csrf_token"])) {
     $_SESSION["games_csrf_token"] = bin2hex(random_bytes(32));
 }
@@ -157,7 +185,7 @@ $formData = [
     "name" => "",
     "branch_id" => $currentBranchId > 0 && isset($allBranchesMap[$currentBranchId]) ? $currentBranchId : 0,
     "status" => 1,
-    "levels_text" => "",
+    "game_level_rows" => buildGameLevelFormRows([], []),
     "group_levels_text" => "",
 ];
 
@@ -175,10 +203,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 "name" => trim((string)($_POST["name"] ?? "")),
                 "branch_id" => (int)($_POST["branch_id"] ?? 0),
                 "status" => ((int)($_POST["status"] ?? 1) === 0) ? 0 : 1,
-                "levels_text" => trim((string)($_POST["levels_text"] ?? "")),
                 "group_levels_text" => trim((string)($_POST["group_levels_text"] ?? "")),
             ];
-            $gameLevelRecords = normalizeGameLevelRecordsInput($formData["levels_text"]);
+            $formData["game_level_rows"] = buildGameLevelFormRows($_POST["level_name"] ?? [], $_POST["level_details"] ?? []);
+            $hasSubmittedGameLevelRows = hasAnyGameLevelFormRowInput($formData["game_level_rows"]);
+            $submittedLevelNames = array_column($formData["game_level_rows"], "level_name");
+            $submittedLevelDetails = array_column($formData["game_level_rows"], "level_details");
+            $gameLevelRecords = $hasSubmittedGameLevelRows
+                ? normalizeGameLevelRecordsFormInput($submittedLevelNames, $submittedLevelDetails)
+                : normalizeGameLevelRecordsInput(trim((string)($_POST["levels_text"] ?? "")));
             $gameGroupLevels = normalizeGameLevelsInput($formData["group_levels_text"]);
 
             if ($formData["name"] === "") {
@@ -191,8 +224,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "اللعبة غير متاحة.";
             } elseif (gameNameTakenInBranch($pdo, $formData["branch_id"], $formData["name"], $formData["id"])) {
                 $error = "هذه اللعبة موجودة بالفعل في هذا الفرع.";
-            } elseif ($formData["levels_text"] !== "" && count($gameLevelRecords) === 0) {
-                $error = "مستويات اللعبة غير صالحة. استخدم الصيغة: اسم المستوى أو اسم المستوى " . GAME_LEVEL_INPUT_DELIMITER . " التفاصيل";
+            } elseif ($hasSubmittedGameLevelRows && count($gameLevelRecords) === 0) {
+                $error = "مستويات اللعبة غير صالحة. تأكد من كتابة اسم لكل مستوى بدون تكرار، وألا يتجاوز الاسم " . GAME_LEVEL_MAX_LENGTH . " حرفًا أو التفاصيل " . GAME_LEVEL_DETAILS_MAX_LENGTH . " حرفًا.";
             } elseif ($formData["group_levels_text"] !== "" && count($gameGroupLevels) === 0) {
                 $error = "مستويات المجموعات غير صالحة.";
             } else {
@@ -355,12 +388,16 @@ $editId = (int)($_GET["edit"] ?? 0);
 if ($editId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
     $editGame = fetchGameById($pdo, $editId);
     if ($editGame) {
+        $editGameLevels = fetchGameLevelRecords($pdo, (int)$editGame["id"]);
         $formData = [
             "id" => (int)$editGame["id"],
             "name" => (string)$editGame["name"],
             "branch_id" => (int)($editGame["branch_id"] ?? 0),
             "status" => (int)$editGame["status"],
-            "levels_text" => formatGameLevelRecordsForTextarea(fetchGameLevelRecords($pdo, (int)$editGame["id"])),
+            "game_level_rows" => buildGameLevelFormRows(
+                array_column($editGameLevels, "level_name"),
+                array_column($editGameLevels, "level_details")
+            ),
             "group_levels_text" => implode(PHP_EOL, fetchGameGroupLevels($pdo, (int)$editGame["id"])),
         ];
     }
@@ -470,6 +507,46 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
             color: var(--text, #0f172a);
             font-size: 12px;
             font-weight: 700;
+        }
+        .game-level-rows {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .game-level-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) auto;
+            gap: 10px;
+            align-items: center;
+        }
+        .game-level-row input {
+            width: 100%;
+        }
+        .game-level-row .btn {
+            white-space: nowrap;
+        }
+        .game-level-row-head {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) auto;
+            gap: 10px;
+            color: var(--text-soft, #6b7280);
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .game-level-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 10px;
+        }
+        @media (max-width: 640px) {
+            .game-level-row,
+            .game-level-row-head {
+                grid-template-columns: 1fr;
+            }
+            .game-level-row .btn {
+                width: 100%;
+            }
         }
         body.dark-mode .games-stat-card {
             background: #162133;
@@ -600,11 +677,39 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                     </div>
 
                     <div class="form-group">
-                        <label for="levels_text">مستويات اللعبة</label>
-                        <textarea name="levels_text" id="levels_text" rows="6" placeholder="مثال: مبتدئ <?php echo GAME_LEVEL_INPUT_DELIMITER; ?> أساسيات اللعبة
-متوسط <?php echo GAME_LEVEL_INPUT_DELIMITER; ?> تطوير المهارات
-متقدم <?php echo GAME_LEVEL_INPUT_DELIMITER; ?> بطولات ومنافسات"><?php echo htmlspecialchars($formData["levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
-                        <small style="color:var(--text-soft,#6b7280);">اكتب كل مستوى في سطر مستقل، ويمكنك إضافة تفاصيله بعد علامة <?php echo htmlspecialchars(GAME_LEVEL_INPUT_DELIMITER, ENT_QUOTES, "UTF-8"); ?> ليظهر المستوى وتفاصيله داخل بوابة اللاعب.</small>
+                        <label>مستويات اللعبة</label>
+                        <div class="game-level-row-head" aria-hidden="true">
+                            <span>اسم المستوى</span>
+                            <span>تفاصيل المستوى</span>
+                            <span>الإجراء</span>
+                        </div>
+                        <div class="game-level-rows" id="gameLevelRows">
+                            <?php foreach ($formData["game_level_rows"] as $row): ?>
+                                <div class="game-level-row">
+                                    <input
+                                        type="text"
+                                        name="level_name[]"
+                                        maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>"
+                                        placeholder="اسم المستوى"
+                                        aria-label="اسم مستوى اللعبة"
+                                        value="<?php echo htmlspecialchars((string)($row["level_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>"
+                                    >
+                                    <input
+                                        type="text"
+                                        name="level_details[]"
+                                        maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>"
+                                        placeholder="تفاصيل المستوى"
+                                        aria-label="تفاصيل مستوى اللعبة"
+                                        value="<?php echo htmlspecialchars((string)($row["level_details"] ?? ""), ENT_QUOTES, "UTF-8"); ?>"
+                                    >
+                                    <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        <div class="game-level-actions">
+                            <button type="button" class="btn btn-soft" id="addGameLevelRow">+ إضافة مستوى</button>
+                        </div>
+                        <small style="color:var(--text-soft,#6b7280);">أدخل كل مستوى في حقل مستقل، وبجواره تفاصيله التي ستظهر داخل بوابة اللاعب.</small>
                     </div>
 
                     <div class="form-group">
@@ -739,5 +844,68 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
 
 <div class="sidebar-overlay" id="sidebarOverlay"></div>
 <script src="assets/js/script.js"></script>
+<script>
+    (function () {
+        'use strict';
+        const rowsContainer = document.getElementById('gameLevelRows');
+        const addButton = document.getElementById('addGameLevelRow');
+        if (!rowsContainer || !addButton) {
+            return;
+        }
+
+        const toggleRemoveButtons = () => {
+            const rows = rowsContainer.querySelectorAll('.game-level-row');
+            rows.forEach((row) => {
+                const button = row.querySelector('.game-level-remove');
+                if (button) {
+                    const isLastRow = rows.length === 1;
+                    button.disabled = isLastRow;
+                    button.title = isLastRow ? 'لا يمكن حذف آخر صف مستوى' : 'حذف صف مستوى اللعبة';
+                    button.setAttribute('aria-label', isLastRow ? 'لا يمكن حذف آخر صف مستوى' : 'حذف صف مستوى اللعبة');
+                }
+            });
+        };
+
+        const createRow = () => {
+            const row = document.createElement('div');
+            row.className = 'game-level-row';
+            row.innerHTML = `
+                <input type="text" name="level_name[]" maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>" placeholder="اسم المستوى" aria-label="اسم مستوى اللعبة">
+                <input type="text" name="level_details[]" maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>" placeholder="تفاصيل المستوى" aria-label="تفاصيل مستوى اللعبة">
+                <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
+            `;
+            return row;
+        };
+
+        addButton.addEventListener('click', () => {
+            rowsContainer.appendChild(createRow());
+            toggleRemoveButtons();
+        });
+
+        rowsContainer.addEventListener('click', (event) => {
+            const removeButton = event.target.closest('.game-level-remove');
+            if (!removeButton) {
+                return;
+            }
+
+            const rows = rowsContainer.querySelectorAll('.game-level-row');
+            if (rows.length === 1) {
+                const inputs = rows[0].querySelectorAll('input');
+                inputs.forEach((input) => {
+                    input.value = '';
+                });
+                return;
+            }
+
+            const row = removeButton.closest('.game-level-row');
+            if (row) {
+                row.remove();
+                toggleRemoveButtons();
+            }
+        });
+
+        toggleRemoveButtons();
+    })();
+</script>
 </body>
 </html>

@@ -163,6 +163,25 @@ function parseGameLevelInputLine($line)
     ];
 }
 
+function normalizeGameLevelRecordValues($levelName, $levelDetails = '')
+{
+    $levelName = trim((string)$levelName);
+    $levelDetails = trim((string)$levelDetails);
+
+    if ($levelName === '' || mb_strlen($levelName) > GAME_LEVEL_MAX_LENGTH) {
+        return null;
+    }
+
+    if ($levelDetails !== '' && mb_strlen($levelDetails) > GAME_LEVEL_DETAILS_MAX_LENGTH) {
+        return null;
+    }
+
+    return [
+        'level_name' => $levelName,
+        'level_details' => $levelDetails,
+    ];
+}
+
 function normalizeGameLevelRecordsInput($value)
 {
     $rawValue = str_replace(["\r\n", "\r"], "\n", (string)$value);
@@ -172,24 +191,44 @@ function normalizeGameLevelRecordsInput($value)
 
     foreach ($lines as $line) {
         [$levelName, $levelDetails] = parseGameLevelInputLine($line);
-
-        if ($levelName === '' || mb_strlen($levelName) > GAME_LEVEL_MAX_LENGTH) {
+        $normalizedRecord = normalizeGameLevelRecordValues($levelName, $levelDetails);
+        if ($normalizedRecord === null) {
             continue;
         }
 
-        if ($levelDetails !== '' && mb_strlen($levelDetails) > GAME_LEVEL_DETAILS_MAX_LENGTH) {
-            continue;
-        }
-
+        $levelName = $normalizedRecord['level_name'];
         if (isset($seen[$levelName])) {
             continue;
         }
 
         $seen[$levelName] = true;
-        $levels[] = [
-            'level_name' => $levelName,
-            'level_details' => $levelDetails,
-        ];
+        $levels[] = $normalizedRecord;
+    }
+
+    return $levels;
+}
+
+function normalizeGameLevelRecordsFormInput($levelNames, $levelDetails)
+{
+    $levelNames = is_array($levelNames) ? array_values($levelNames) : [];
+    $levelDetails = is_array($levelDetails) ? array_values($levelDetails) : [];
+    $levels = [];
+    $seen = [];
+    $rowCount = max(count($levelNames), count($levelDetails));
+
+    for ($index = 0; $index < $rowCount; $index++) {
+        $normalizedRecord = normalizeGameLevelRecordValues($levelNames[$index] ?? '', $levelDetails[$index] ?? '');
+        if ($normalizedRecord === null) {
+            continue;
+        }
+
+        $levelName = $normalizedRecord['level_name'];
+        if (isset($seen[$levelName])) {
+            continue;
+        }
+
+        $seen[$levelName] = true;
+        $levels[] = $normalizedRecord;
     }
 
     return $levels;

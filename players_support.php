@@ -462,6 +462,109 @@ function ensurePlayersTables(PDO $pdo)
     }
 }
 
+function ensurePlayerSportsGroupsSchema(PDO $pdo)
+{
+    static $alreadyEnsured = false;
+    if ($alreadyEnsured) {
+        return;
+    }
+
+    $pdo->exec(
+        "CREATE TABLE IF NOT EXISTS sports_groups (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            game_id INT(11) NOT NULL,
+            group_name VARCHAR(150) NOT NULL,
+            group_level VARCHAR(150) NOT NULL,
+            training_days_count INT(11) NOT NULL DEFAULT 1,
+            training_day_keys VARCHAR(255) NOT NULL DEFAULT '',
+            training_time TIME NULL DEFAULT NULL,
+            training_day_times LONGTEXT NULL DEFAULT NULL,
+            trainings_count INT(11) NOT NULL DEFAULT 1,
+            exercises_count INT(11) NOT NULL DEFAULT 1,
+            max_players INT(11) NOT NULL DEFAULT 1,
+            trainer_name VARCHAR(150) NOT NULL,
+            assistant_trainer_name VARCHAR(150) NOT NULL DEFAULT '',
+            ballet_trainer_name VARCHAR(150) NOT NULL DEFAULT '',
+            academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00,
+            walkers_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            other_weapons_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            civilian_price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+            created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY idx_sports_groups_game (game_id),
+            KEY idx_sports_groups_game_level (game_id, group_level)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
+    );
+
+    $requiredColumns = [
+        'training_days_count' => "ALTER TABLE sports_groups ADD COLUMN training_days_count INT(11) NOT NULL DEFAULT 1 AFTER group_level",
+        'training_day_keys' => "ALTER TABLE sports_groups ADD COLUMN training_day_keys VARCHAR(255) NOT NULL DEFAULT '' AFTER training_days_count",
+        'training_time' => "ALTER TABLE sports_groups ADD COLUMN training_time TIME NULL DEFAULT NULL AFTER training_day_keys",
+        'training_day_times' => "ALTER TABLE sports_groups ADD COLUMN training_day_times LONGTEXT NULL DEFAULT NULL AFTER training_time",
+        'trainings_count' => "ALTER TABLE sports_groups ADD COLUMN trainings_count INT(11) NOT NULL DEFAULT 1 AFTER training_day_times",
+        'exercises_count' => "ALTER TABLE sports_groups ADD COLUMN exercises_count INT(11) NOT NULL DEFAULT 1 AFTER trainings_count",
+        'max_players' => "ALTER TABLE sports_groups ADD COLUMN max_players INT(11) NOT NULL DEFAULT 1 AFTER exercises_count",
+        'assistant_trainer_name' => "ALTER TABLE sports_groups ADD COLUMN assistant_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER trainer_name",
+        'ballet_trainer_name' => "ALTER TABLE sports_groups ADD COLUMN ballet_trainer_name VARCHAR(150) NOT NULL DEFAULT '' AFTER assistant_trainer_name",
+        'academy_percentage' => "ALTER TABLE sports_groups ADD COLUMN academy_percentage DECIMAL(5,2) NOT NULL DEFAULT 0.00 AFTER ballet_trainer_name",
+        'walkers_price' => "ALTER TABLE sports_groups ADD COLUMN walkers_price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER academy_percentage",
+        'other_weapons_price' => "ALTER TABLE sports_groups ADD COLUMN other_weapons_price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER walkers_price",
+        'civilian_price' => "ALTER TABLE sports_groups ADD COLUMN civilian_price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER other_weapons_price",
+    ];
+
+    $existingColumnsStmt = $pdo->prepare(
+        "SELECT COLUMN_NAME
+         FROM information_schema.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'sports_groups'
+           AND COLUMN_NAME = ?
+         LIMIT 1"
+    );
+
+    foreach ($requiredColumns as $columnName => $sql) {
+        $existingColumnsStmt->execute([$columnName]);
+        if (!$existingColumnsStmt->fetchColumn()) {
+            try {
+                $pdo->exec($sql);
+            } catch (Throwable $throwable) {
+                error_log('Failed to ensure sports_groups.' . $columnName . ' exists: ' . $throwable->getMessage());
+            }
+        }
+    }
+
+    $databaseName = (string)$pdo->query('SELECT DATABASE()')->fetchColumn();
+    if ($databaseName === '') {
+        $alreadyEnsured = true;
+        return;
+    }
+
+    $constraintsStmt = $pdo->prepare(
+        "SELECT CONSTRAINT_NAME
+         FROM information_schema.TABLE_CONSTRAINTS
+         WHERE TABLE_SCHEMA = ?
+           AND TABLE_NAME = 'sports_groups'
+           AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+           AND CONSTRAINT_NAME = 'fk_sports_groups_game'
+         LIMIT 1"
+    );
+    $constraintsStmt->execute([$databaseName]);
+
+    if (!$constraintsStmt->fetchColumn()) {
+        try {
+            $pdo->exec(
+                "ALTER TABLE sports_groups
+                 ADD CONSTRAINT fk_sports_groups_game
+                 FOREIGN KEY (game_id) REFERENCES games (id) ON DELETE CASCADE"
+            );
+        } catch (Throwable $throwable) {
+            error_log('Failed to ensure sports_groups foreign key: ' . $throwable->getMessage());
+        }
+    }
+
+    $alreadyEnsured = true;
+}
+
 function ensurePlayerNotificationsTableForPortal(PDO $pdo)
 {
     static $alreadyEnsured = false;
