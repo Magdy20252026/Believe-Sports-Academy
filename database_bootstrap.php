@@ -807,9 +807,31 @@ function seedDefaultApplicationData(PDO $pdo)
         }
     }
 
-    $adminStmt = $pdo->prepare("SELECT id, password, role FROM users WHERE username = ? LIMIT 1");
+    $adminStmt = $pdo->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
     $adminStmt->execute(["admin"]);
     $adminUser = $adminStmt->fetch();
+
+    if ($adminUser) {
+        return;
+    }
+
+    try {
+        $usersCount = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+    } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to count users: " . $throwable->getMessage());
+        return;
+    }
+
+    try {
+        $activityLogCount = (int)$pdo->query("SELECT COUNT(*) FROM activity_log")->fetchColumn();
+    } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to count activity log rows: " . $throwable->getMessage());
+        return;
+    }
+
+    if ($usersCount > 0 || $activityLogCount > 0) {
+        return;
+    }
 
     $passwordHash = password_hash("123456", PASSWORD_DEFAULT);
     if ($passwordHash === false) {
@@ -817,57 +839,25 @@ function seedDefaultApplicationData(PDO $pdo)
         return;
     }
 
-    if ($adminUser) {
-        $storedPassword = (string)($adminUser["password"] ?? "");
-        $passwordInfo = password_get_info($storedPassword);
-        $passwordMatches = !empty($passwordInfo["algo"]) && password_verify("123456", $storedPassword);
-
-        if (!$passwordMatches || (string)($adminUser["role"] ?? "") !== "مدير") {
-            $updateAdminStmt = $pdo->prepare(
-                "UPDATE users
-                 SET password = ?, role = 'مدير', can_access_all_games = 1, can_access_all_branches = 1, status = 1
-                 WHERE id = ?"
-            );
-            $updateAdminStmt->execute([$passwordHash, (int)$adminUser["id"]]);
-        } else {
-            $updateFlagsStmt = $pdo->prepare(
-                "UPDATE users
-                 SET role = 'مدير', can_access_all_games = 1, can_access_all_branches = 1, status = 1
-                 WHERE id = ?"
-            );
-            $updateFlagsStmt->execute([(int)$adminUser["id"]]);
-            error_log("seedDefaultApplicationData: default admin account is still using the default password 123456. Change it after first login.");
-        }
-
-        $adminUserId = (int)$adminUser["id"];
-    } else {
+    try {
         $insertAdminStmt = $pdo->prepare(
             "INSERT INTO users (username, password, role, can_access_all_games, can_access_all_branches, status)
              VALUES (?, ?, 'مدير', 1, 1, 1)"
         );
         $insertAdminStmt->execute(["admin", $passwordHash]);
         $adminUserId = (int)$pdo->lastInsertId();
-    }
+        error_log("seedDefaultApplicationData: default admin account was created. Change its password after first login.");
 
-    if ($adminUserId <= 0) {
-        return;
-    }
-
-    try {
         $pdo->prepare(
             "INSERT IGNORE INTO user_branches (user_id, branch_id)
              SELECT ?, b.id FROM branches b WHERE b.status = 1"
         )->execute([$adminUserId]);
-    } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to grant admin branch access: " . $throwable->getMessage());
-    }
 
-    try {
         $pdo->prepare(
             "INSERT IGNORE INTO user_games (user_id, game_id)
              SELECT ?, g.id FROM games g WHERE g.status = 1"
         )->execute([$adminUserId]);
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to grant admin game access: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: failed to create default admin account: " . $throwable->getMessage());
     }
 }
