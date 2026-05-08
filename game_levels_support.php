@@ -252,6 +252,7 @@ function fetchGameLevelRecordsGrouped(PDO $pdo)
     foreach ($stmt->fetchAll() as $row) {
         $gameId = (int)($row['game_id'] ?? 0);
         $levelName = trim((string)($row['level_name'] ?? ''));
+        $levelDetails = trim((string)($row['level_details'] ?? ''));
         if ($gameId <= 0 || $levelName === '') {
             continue;
         }
@@ -261,7 +262,7 @@ function fetchGameLevelRecordsGrouped(PDO $pdo)
         }
         $levelsByGame[$gameId][] = [
             'level_name' => $levelName,
-            'level_details' => trim((string)($row['level_details'] ?? '')),
+            'level_details' => $levelDetails,
         ];
     }
 

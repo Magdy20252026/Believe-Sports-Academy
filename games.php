@@ -192,7 +192,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif (gameNameTakenInBranch($pdo, $formData["branch_id"], $formData["name"], $formData["id"])) {
                 $error = "هذه اللعبة موجودة بالفعل في هذا الفرع.";
             } elseif ($formData["levels_text"] !== "" && count($gameLevelRecords) === 0) {
-                $error = "مستويات اللعبة غير صالحة. استخدم الصيغة: اسم المستوى | التفاصيل";
+                $error = "مستويات اللعبة غير صالحة. استخدم الصيغة: اسم المستوى أو اسم المستوى | التفاصيل";
             } elseif ($formData["group_levels_text"] !== "" && count($gameGroupLevels) === 0) {
                 $error = "مستويات المجموعات غير صالحة.";
             } else {
