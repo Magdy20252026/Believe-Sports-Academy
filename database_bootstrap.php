@@ -818,7 +818,7 @@ function seedDefaultApplicationData(PDO $pdo)
     try {
         $hasUsers = (bool)$pdo->query("SELECT 1 FROM users LIMIT 1")->fetchColumn();
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to inspect users, so the app cannot determine whether default admin creation is still needed: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: failed to inspect users, so the app cannot determine whether default admin creation should proceed: " . $throwable->getMessage());
         return;
     }
 
@@ -847,7 +847,7 @@ function seedDefaultApplicationData(PDO $pdo)
         );
         $insertAdminStmt->execute(["admin", $passwordHash]);
         $adminUserId = (int)$pdo->lastInsertId();
-        error_log("seedDefaultApplicationData: default admin account was created with the default password 123456.");
+        error_log("seedDefaultApplicationData: default admin account was created with the configured default credentials.");
     } catch (Throwable $throwable) {
         error_log("seedDefaultApplicationData: failed to create default admin account: " . $throwable->getMessage());
         return;
