@@ -1025,7 +1025,7 @@ $groupsSql = "SELECT id, group_name, group_level, training_days_count, training_
 $groupsParams = [$currentGameId];
 
 if ($groupSearch !== "") {
-    $groupsSql .= " AND group_name LIKE ? ESCAPE '\\\\'";
+    $groupsSql .= " AND group_name LIKE ? ESCAPE '\\'";
     $groupsParams[] = "%" . escapeSqlLikePattern($groupSearch) . "%";
 }
 if ($filterLevel !== "") {
@@ -1298,7 +1298,7 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
 
                 <div class="filter-actions">
                     <button type="submit" class="btn btn-primary">تصفية</button>
-                    <a href="<?php echo GROUPS_PAGE_HREF; ?>" class="btn btn-soft" aria-label="إلغاء الفلاتر">إلغاء الفلاتر</a>
+                    <a href="<?php echo GROUPS_PAGE_HREF; ?>" class="btn btn-soft">إلغاء الفلاتر</a>
                 </div>
             </form>
         </div>
