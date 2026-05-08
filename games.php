@@ -225,7 +225,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif (gameNameTakenInBranch($pdo, $formData["branch_id"], $formData["name"], $formData["id"])) {
                 $error = "هذه اللعبة موجودة بالفعل في هذا الفرع.";
             } elseif ($hasSubmittedGameLevelRows && count($gameLevelRecords) === 0) {
-                $error = "مستويات اللعبة غير صالحة. تأكد من كتابة اسم لكل مستوى بدون تكرار، وألا يتجاوز الاسم أو التفاصيل الحد المسموح.";
+                $error = "مستويات اللعبة غير صالحة. تأكد من كتابة اسم لكل مستوى بدون تكرار، وألا يتجاوز الاسم " . GAME_LEVEL_MAX_LENGTH . " حرفًا أو التفاصيل " . GAME_LEVEL_DETAILS_MAX_LENGTH . " حرفًا.";
             } elseif ($formData["group_levels_text"] !== "" && count($gameGroupLevels) === 0) {
                 $error = "مستويات المجموعات غير صالحة.";
             } else {
@@ -858,8 +858,10 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
             rows.forEach((row) => {
                 const button = row.querySelector('.game-level-remove');
                 if (button) {
-                    button.disabled = rows.length === 1;
-                    button.title = rows.length === 1 ? 'لا يمكن حذف آخر صف مستوى' : 'حذف صف مستوى اللعبة';
+                    const isLastRow = rows.length === 1;
+                    button.disabled = isLastRow;
+                    button.title = isLastRow ? 'لا يمكن حذف آخر صف مستوى' : 'حذف صف مستوى اللعبة';
+                    button.setAttribute('aria-label', isLastRow ? 'لا يمكن حذف آخر صف مستوى' : 'حذف صف مستوى اللعبة');
                 }
             });
         };
