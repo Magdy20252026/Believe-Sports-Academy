@@ -847,9 +847,13 @@ function seedDefaultApplicationData(PDO $pdo)
         );
         $insertAdminStmt->execute(["admin", $passwordHash]);
         $adminUserId = (int)$pdo->lastInsertId();
-        error_log("seedDefaultApplicationData: default admin account was created. Change its password after first login.");
+        error_log("seedDefaultApplicationData: default admin account was created with the default password 123456.");
     } catch (Throwable $throwable) {
         error_log("seedDefaultApplicationData: failed to create default admin account: " . $throwable->getMessage());
+        return;
+    }
+
+    if ($adminUserId <= 0) {
         return;
     }
 
