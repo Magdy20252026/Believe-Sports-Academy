@@ -515,19 +515,28 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
         }
         .game-level-row {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) auto;
+            grid-template-columns: minmax(220px, 1.2fr) minmax(320px, 2fr) auto;
             gap: 10px;
-            align-items: center;
+            align-items: start;
+        }
+        .game-level-row input,
+        .game-level-row textarea {
+            width: 100%;
         }
         .game-level-row input {
-            width: 100%;
+            min-height: 52px;
+        }
+        .game-level-row textarea {
+            min-height: 96px;
+            resize: vertical;
         }
         .game-level-row .btn {
             white-space: nowrap;
+            align-self: stretch;
         }
         .game-level-row-head {
             display: grid;
-            grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) auto;
+            grid-template-columns: minmax(220px, 1.2fr) minmax(320px, 2fr) auto;
             gap: 10px;
             color: var(--text-soft, #6b7280);
             font-size: 12px;
@@ -694,14 +703,13 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                                         aria-label="اسم مستوى اللعبة"
                                         value="<?php echo htmlspecialchars((string)($row["level_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>"
                                     >
-                                    <input
-                                        type="text"
+                                    <textarea
                                         name="level_details[]"
                                         maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>"
                                         placeholder="تفاصيل المستوى"
                                         aria-label="تفاصيل مستوى اللعبة"
-                                        value="<?php echo htmlspecialchars((string)($row["level_details"] ?? ""), ENT_QUOTES, "UTF-8"); ?>"
-                                    >
+                                        rows="3"
+                                    ><?php echo htmlspecialchars((string)($row["level_details"] ?? ""), ENT_QUOTES, "UTF-8"); ?></textarea>
                                     <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
                                 </div>
                             <?php endforeach; ?>
@@ -871,7 +879,7 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
             row.className = 'game-level-row';
             row.innerHTML = `
                 <input type="text" name="level_name[]" maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>" placeholder="اسم المستوى" aria-label="اسم مستوى اللعبة">
-                <input type="text" name="level_details[]" maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>" placeholder="تفاصيل المستوى" aria-label="تفاصيل مستوى اللعبة">
+                <textarea name="level_details[]" maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>" placeholder="تفاصيل المستوى" aria-label="تفاصيل مستوى اللعبة" rows="3"></textarea>
                 <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
             `;
             return row;
@@ -890,9 +898,9 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
 
             const rows = rowsContainer.querySelectorAll('.game-level-row');
             if (rows.length === 1) {
-                const inputs = rows[0].querySelectorAll('input');
-                inputs.forEach((input) => {
-                    input.value = '';
+                const fields = rows[0].querySelectorAll('input, textarea');
+                fields.forEach((field) => {
+                    field.value = '';
                 });
                 return;
             }

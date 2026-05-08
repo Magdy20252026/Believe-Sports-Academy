@@ -172,6 +172,7 @@ function encodePlayersPageJson($value, $fallback = 'null')
 $success = '';
 $error = '';
 $isManager = (string)($_SESSION['role'] ?? '') === 'مدير';
+$currentUserId = (int)($_SESSION['user_id'] ?? 0);
 $currentGameId = (int)($_SESSION['selected_game_id'] ?? 0);
 $currentGameName = (string)($_SESSION['selected_game_name'] ?? '');
 $isPentathlon = mb_stripos($currentGameName, 'خماسي') !== false;
@@ -598,8 +599,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                                   player_level = ?, receipt_number = ?, subscriber_number = ?, subscription_number = ?, issue_date = ?, birth_date = ?, player_age = ?,
                                   training_days_per_week = ?, total_training_days = ?, total_trainings = ?, trainer_name = ?,
                                   subscription_price = ?, paid_amount = ?, academy_percentage = ?, academy_amount = ?,
-                                  training_day_keys = ?, training_time = ?
-                              WHERE id = ? AND game_id = ?'
+                                  training_day_keys = ?, training_time = ?, updated_by_user_id = ?
+                               WHERE id = ? AND game_id = ?'
                         );
                         $saveStmt->execute([
                             $selectedGroupId,
@@ -630,6 +631,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                             formatPlayerCurrency($academyAmount),
                             $trainingDayValue,
                             $trainingTimeValue,
+                            $currentUserId > 0 ? $currentUserId : null,
                             $formData['id'],
                             $currentGameId,
                         ]);
@@ -653,8 +655,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                                 subscription_start_date, subscription_end_date, group_name, group_level,
                                 player_level, receipt_number, subscriber_number, subscription_number, issue_date, birth_date, player_age,
                                 training_days_per_week, total_training_days, total_trainings, trainer_name,
-                                subscription_price, paid_amount, academy_percentage, academy_amount, training_day_keys, training_time, password
-                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                                subscription_price, paid_amount, academy_percentage, academy_amount, training_day_keys, training_time, password,
+                                created_by_user_id, updated_by_user_id
+                             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
                         );
                         $saveStmt->execute([
                             $currentGameId,
@@ -687,6 +690,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !(isset($_SERVER['HTTP_X_REQUESTED_
                             $trainingDayValue,
                             $trainingTimeValue,
                             '123456',
+                            $currentUserId > 0 ? $currentUserId : null,
+                            $currentUserId > 0 ? $currentUserId : null,
                         ]);
                         $newPlayerId = (int)$pdo->lastInsertId();
                         syncPlayerSubscriptionHistoryFromPlayerId($pdo, $newPlayerId, $currentGameId, 'save');
