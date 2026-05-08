@@ -1070,7 +1070,7 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
     <style>
         .player-search-form {
             display: grid;
-            grid-template-columns: minmax(260px, 1.6fr) repeat(4, minmax(150px, 0.9fr)) auto;
+            grid-template-columns: minmax(260px, 2fr) repeat(4, minmax(150px, 1fr)) auto;
             gap: 12px;
             align-items: end;
         }

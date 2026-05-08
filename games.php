@@ -461,7 +461,7 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
             gap: 20px;
             align-items: start;
         }
-        @media (max-width: 1180px) {
+        @media (max-width: 1200px) {
             .games-grid { grid-template-columns: 1fr; }
         }
         .games-form-card .login-form { display: flex; flex-direction: column; gap: 16px; }
