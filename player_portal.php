@@ -220,11 +220,30 @@ foreach ($attendanceRows as $a) {
     elseif ($normalizedStatus === PLAYER_ATTENDANCE_STATUS_ABSENT) $absentCount++;
 }
 
-$groupLevelsList = [];
 $playerSpecificLevel = trim((string)($player["player_level"] ?? ""));
-$groupLevelsList = fetchGameLevels($pdo, $playerGameId);
-if ($playerSpecificLevel !== "" && !in_array($playerSpecificLevel, $groupLevelsList, true)) {
-    $groupLevelsList[] = $playerSpecificLevel;
+$currentLevel = $playerSpecificLevel !== ''
+    ? $playerSpecificLevel
+    : trim((string)($player["group_level"] !== "" ? $player["group_level"] : ($player["sg_group_level"] ?? "")));
+$gameLevelRecords = fetchGameLevelRecords($pdo, $playerGameId);
+$groupLevelsList = $gameLevelRecords;
+$currentLevelDetails = '';
+$levelExists = false;
+
+foreach ($groupLevelsList as $levelRecord) {
+    if ((string)($levelRecord["level_name"] ?? '') !== $currentLevel) {
+        continue;
+    }
+
+    $levelExists = true;
+    $currentLevelDetails = trim((string)($levelRecord["level_details"] ?? ''));
+    break;
+}
+
+if ($currentLevel !== '' && !$levelExists) {
+    $groupLevelsList[] = [
+        'level_name' => $currentLevel,
+        'level_details' => '',
+    ];
 }
 
 $storeProducts = [];
@@ -765,6 +784,9 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
                             <div class="pp-info-item"><div class="pp-info-lbl">اللعبة</div><div class="pp-info-val"><?php echo pportEsc($player["game_name"] ?? "—"); ?></div></div>
                             <div class="pp-info-item"><div class="pp-info-lbl">المجموعة</div><div class="pp-info-val"><?php echo pportEsc(($player["group_name"] !== "" ? $player["group_name"] : ($player["sg_group_name"] ?? "—"))); ?></div></div>
                             <div class="pp-info-item"><div class="pp-info-lbl">المستوى</div><div class="pp-info-val"><?php echo pportEsc($currentLevel !== "" ? $currentLevel : "—"); ?></div></div>
+                            <?php if ($currentLevelDetails !== ""): ?>
+                                <div class="pp-info-item"><div class="pp-info-lbl">تفاصيل المستوى</div><div class="pp-info-val"><?php echo pportEsc($currentLevelDetails); ?></div></div>
+                            <?php endif; ?>
                             <?php if ($playerSpecificLevel !== ""): ?>
                                 <div class="pp-info-item"><div class="pp-info-lbl">مستوى اللاعب</div><div class="pp-info-val"><?php echo pportEsc($playerSpecificLevel); ?></div></div>
                             <?php endif; ?>
@@ -823,13 +845,28 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
                             <div class="pp-empty"><span>🏆</span>لا توجد مستويات معرّفة لهذه اللعبة.</div>
                         <?php else: ?>
                             <div class="pp-levels">
-                                <?php $i = 1; foreach ($groupLevelsList as $lvl): ?>
-                                    <?php $isActive = ($lvl === $playerSpecificLevel); ?>
+                                <?php $i = 1; foreach ($groupLevelsList as $levelRecord): ?>
+                                    <?php $levelName = trim((string)($levelRecord["level_name"] ?? "")); ?>
+                                    <?php $levelDetails = trim((string)($levelRecord["level_details"] ?? "")); ?>
+                                    <?php $isActive = ($levelName === $currentLevel); ?>
                                     <div class="pp-level <?php echo $isActive ? 'active' : ''; ?>">
                                         <div class="pp-level-num"><?php echo $i; ?></div>
                                         <div>
-                                            <div class="pp-level-name"><?php echo pportEsc($lvl); ?></div>
-                                            <div class="pp-level-sub"><?php echo $isActive ? '🌟 مستواك الحالي' : 'مستوى باللعبة'; ?></div>
+                                            <div class="pp-level-name"><?php echo pportEsc($levelName); ?></div>
+                                            <div class="pp-level-sub">
+                                                <?php
+                                                if ($levelDetails !== '') {
+                                                    echo pportEsc($levelDetails);
+                                                } elseif (!$isActive) {
+                                                    echo 'مستوى باللعبة';
+                                                } else {
+                                                    echo pportEsc('—');
+                                                }
+                                                ?>
+                                            </div>
+                                            <?php if ($isActive): ?>
+                                                <div class="pp-level-sub" style="margin-top:6px;">🌟 مستواك الحالي</div>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 <?php $i++; endforeach; ?>
