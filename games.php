@@ -601,7 +601,9 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
 
                     <div class="form-group">
                         <label for="levels_text">مستويات اللعبة</label>
-                        <textarea name="levels_text" id="levels_text" rows="6" placeholder="مثال: مبتدئ | أساسيات اللعبة&#10;متوسط | تطوير المهارات&#10;متقدم | بطولات ومنافسات"><?php echo htmlspecialchars($formData["levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
+                        <textarea name="levels_text" id="levels_text" rows="6" placeholder="مثال: مبتدئ | أساسيات اللعبة
+متوسط | تطوير المهارات
+متقدم | بطولات ومنافسات"><?php echo htmlspecialchars($formData["levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
                         <small style="color:var(--text-soft,#6b7280);">اكتب كل مستوى في سطر مستقل، ويمكنك إضافة تفاصيله بعد علامة | ليظهر المستوى وتفاصيله داخل بوابة اللاعب.</small>
                     </div>
 

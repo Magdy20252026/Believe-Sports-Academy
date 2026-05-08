@@ -15,7 +15,7 @@ function ensureGameLevelsTable(PDO $pdo)
             id INT(11) NOT NULL AUTO_INCREMENT,
             game_id INT(11) NOT NULL,
             level_name VARCHAR(150) NOT NULL,
-            level_details TEXT NOT NULL,
+            level_details TEXT NULL,
             sort_order INT(11) NOT NULL DEFAULT 0,
             created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -44,7 +44,7 @@ function ensureGameLevelsTable(PDO $pdo)
         try {
             $pdo->exec(
                 "ALTER TABLE game_levels
-                 ADD COLUMN level_details TEXT NOT NULL AFTER level_name"
+                 ADD COLUMN level_details TEXT NULL AFTER level_name"
             );
         } catch (Throwable $throwable) {
             error_log('Failed to ensure game_levels.level_details column: ' . $throwable->getMessage());
