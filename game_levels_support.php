@@ -195,6 +195,40 @@ function normalizeGameLevelRecordsInput($value)
     return $levels;
 }
 
+function normalizeGameLevelRecordsFormInput($levelNames, $levelDetails)
+{
+    $levelNames = is_array($levelNames) ? array_values($levelNames) : [];
+    $levelDetails = is_array($levelDetails) ? array_values($levelDetails) : [];
+    $levels = [];
+    $seen = [];
+    $rowCount = max(count($levelNames), count($levelDetails));
+
+    for ($index = 0; $index < $rowCount; $index++) {
+        $levelName = trim((string)($levelNames[$index] ?? ''));
+        $levelDetailsValue = trim((string)($levelDetails[$index] ?? ''));
+
+        if ($levelName === '' || mb_strlen($levelName) > GAME_LEVEL_MAX_LENGTH) {
+            continue;
+        }
+
+        if ($levelDetailsValue !== '' && mb_strlen($levelDetailsValue) > GAME_LEVEL_DETAILS_MAX_LENGTH) {
+            continue;
+        }
+
+        if (isset($seen[$levelName])) {
+            continue;
+        }
+
+        $seen[$levelName] = true;
+        $levels[] = [
+            'level_name' => $levelName,
+            'level_details' => $levelDetailsValue,
+        ];
+    }
+
+    return $levels;
+}
+
 function formatGameLevelRecordsForTextarea(array $levels)
 {
     $lines = [];
