@@ -223,7 +223,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif (gameNameTakenInBranch($pdo, $formData["branch_id"], $formData["name"], $formData["id"])) {
                 $error = "هذه اللعبة موجودة بالفعل في هذا الفرع.";
             } elseif ($hasSubmittedGameLevelRows && count($gameLevelRecords) === 0) {
-                $error = "مستويات اللعبة غير صالحة. اكتب اسم كل مستوى في الحقل الأول، وتفاصيله في الحقل المجاور.";
+                $error = "مستويات اللعبة غير صالحة. تأكد من كتابة اسم لكل مستوى بدون تكرار، وألا يتجاوز الاسم أو التفاصيل الحد المسموح.";
             } elseif ($formData["group_levels_text"] !== "" && count($gameGroupLevels) === 0) {
                 $error = "مستويات المجموعات غير صالحة.";
             } else {
@@ -842,6 +842,7 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
 <script src="assets/js/script.js"></script>
 <script>
     (function () {
+        'use strict';
         const rowsContainer = document.getElementById('gameLevelRows');
         const addButton = document.getElementById('addGameLevelRow');
         if (!rowsContainer || !addButton) {
