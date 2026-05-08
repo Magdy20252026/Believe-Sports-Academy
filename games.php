@@ -178,7 +178,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 "levels_text" => trim((string)($_POST["levels_text"] ?? "")),
                 "group_levels_text" => trim((string)($_POST["group_levels_text"] ?? "")),
             ];
-            $gameLevels = normalizeGameLevelsInput($formData["levels_text"]);
+            $gameLevelRecords = normalizeGameLevelRecordsInput($formData["levels_text"]);
             $gameGroupLevels = normalizeGameLevelsInput($formData["group_levels_text"]);
 
             if ($formData["name"] === "") {
@@ -191,8 +191,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 $error = "اللعبة غير متاحة.";
             } elseif (gameNameTakenInBranch($pdo, $formData["branch_id"], $formData["name"], $formData["id"])) {
                 $error = "هذه اللعبة موجودة بالفعل في هذا الفرع.";
-            } elseif ($formData["levels_text"] !== "" && count($gameLevels) === 0) {
-                $error = "مستويات اللعبة غير صالحة.";
+            } elseif ($formData["levels_text"] !== "" && count($gameLevelRecords) === 0) {
+                $error = "مستويات اللعبة غير صالحة. استخدم الصيغة: اسم المستوى | التفاصيل";
             } elseif ($formData["group_levels_text"] !== "" && count($gameGroupLevels) === 0) {
                 $error = "مستويات المجموعات غير صالحة.";
             } else {
@@ -208,7 +208,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             $formData["status"],
                             $formData["id"],
                         ]);
-                        saveGameLevels($pdo, $formData["id"], $gameLevels);
+                        saveGameLevels($pdo, $formData["id"], $gameLevelRecords);
                         saveGameGroupLevels($pdo, $formData["id"], $gameGroupLevels);
                         auditTrack(
                             $pdo,
@@ -232,7 +232,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                             $formData["status"],
                         ]);
                         $newGameId = (int)$pdo->lastInsertId();
-                        saveGameLevels($pdo, $newGameId, $gameLevels);
+                        saveGameLevels($pdo, $newGameId, $gameLevelRecords);
                         saveGameGroupLevels($pdo, $newGameId, $gameGroupLevels);
                         $creatorId = (int)($_SESSION["user_id"] ?? 0);
                         if ($creatorId > 0 && $newGameId > 0) {
@@ -360,7 +360,7 @@ if ($editId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
             "name" => (string)$editGame["name"],
             "branch_id" => (int)($editGame["branch_id"] ?? 0),
             "status" => (int)$editGame["status"],
-            "levels_text" => implode(PHP_EOL, fetchGameLevels($pdo, (int)$editGame["id"])),
+            "levels_text" => formatGameLevelRecordsForTextarea(fetchGameLevelRecords($pdo, (int)$editGame["id"])),
             "group_levels_text" => implode(PHP_EOL, fetchGameGroupLevels($pdo, (int)$editGame["id"])),
         ];
     }
@@ -373,7 +373,7 @@ $gamesStmt = $pdo->query(
      ORDER BY (b.name IS NULL) ASC, b.name ASC, g.name ASC"
 );
 $games = $gamesStmt->fetchAll();
-$gameLevelsByGame = fetchGameLevelsGrouped($pdo);
+$gameLevelsByGame = fetchGameLevelRecordsGrouped($pdo);
 $gameGroupLevelsByGame = fetchGameGroupLevelsGrouped($pdo);
 
 $totalGames = count($games);
@@ -601,8 +601,8 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
 
                     <div class="form-group">
                         <label for="levels_text">مستويات اللعبة</label>
-                        <textarea name="levels_text" id="levels_text" rows="6" placeholder="اكتب كل مستوى في سطر مستقل"><?php echo htmlspecialchars($formData["levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
-                        <small style="color:var(--text-soft,#6b7280);">هذه المستويات تبقى خاصة باللعبة واللاعبين وبوابة اللاعبين.</small>
+                        <textarea name="levels_text" id="levels_text" rows="6" placeholder="مثال: مبتدئ | أساسيات اللعبة&#10;متوسط | تطوير المهارات&#10;متقدم | بطولات ومنافسات"><?php echo htmlspecialchars($formData["levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
+                        <small style="color:var(--text-soft,#6b7280);">اكتب كل مستوى في سطر مستقل، ويمكنك إضافة تفاصيله بعد علامة | ليظهر المستوى وتفاصيله داخل بوابة اللاعب.</small>
                     </div>
 
                     <div class="form-group">
@@ -668,8 +668,13 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                                                 <span style="color:var(--text-soft,#6b7280);">—</span>
                                             <?php else: ?>
                                                 <div class="games-levels-list">
-                                                    <?php foreach ($gameLevels as $levelName): ?>
-                                                        <span class="games-level-chip"><?php echo htmlspecialchars($levelName, ENT_QUOTES, "UTF-8"); ?></span>
+                                                    <?php foreach ($gameLevels as $level): ?>
+                                                        <div class="games-level-chip" style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+                                                            <span><?php echo htmlspecialchars((string)($level["level_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?></span>
+                                                            <?php if (!empty($level["level_details"])): ?>
+                                                                <small style="color:var(--text-soft,#6b7280);font-weight:600;"><?php echo htmlspecialchars((string)$level["level_details"], ENT_QUOTES, "UTF-8"); ?></small>
+                                                            <?php endif; ?>
+                                                        </div>
                                                     <?php endforeach; ?>
                                                 </div>
                                             <?php endif; ?>
