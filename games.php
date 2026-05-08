@@ -457,14 +457,18 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
         .games-stat-card strong { font-size: 26px; }
         .games-grid {
             display: grid;
-            grid-template-columns: minmax(280px, 360px) 1fr;
-            gap: 18px;
+            grid-template-columns: minmax(420px, 540px) minmax(0, 1fr);
+            gap: 20px;
             align-items: start;
         }
-        @media (max-width: 900px) {
+        @media (max-width: 1200px) {
             .games-grid { grid-template-columns: 1fr; }
         }
-        .games-form-card .login-form { display: flex; flex-direction: column; gap: 14px; }
+        .games-form-card .login-form { display: flex; flex-direction: column; gap: 16px; }
+        .games-form-card {
+            position: sticky;
+            top: 20px;
+        }
         .games-status-pill {
             display: inline-block;
             padding: 3px 10px;
@@ -515,44 +519,79 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
         }
         .game-level-row {
             display: grid;
-            grid-template-columns: minmax(220px, 1.2fr) minmax(320px, 2fr) auto;
-            gap: 10px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
             align-items: start;
+            padding: 16px;
+            border-radius: 20px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: linear-gradient(135deg, rgba(47, 91, 234, 0.04), rgba(124, 58, 237, 0.04));
         }
-        .game-level-row input,
-        .game-level-row textarea {
+        .game-level-field {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 0;
+        }
+        .game-level-field-label {
+            color: var(--text, #0f172a);
+            font-size: 13px;
+            font-weight: 800;
+        }
+        .game-level-field input,
+        .game-level-field textarea {
             width: 100%;
         }
-        .game-level-row input {
+        .game-level-field input {
             min-height: 52px;
         }
-        .game-level-row textarea {
+        .game-level-field textarea {
             min-height: 96px;
             resize: vertical;
         }
+        .game-level-row-actions {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: flex-end;
+        }
         .game-level-row .btn {
             white-space: nowrap;
-            align-self: stretch;
-        }
-        .game-level-row-head {
-            display: grid;
-            grid-template-columns: minmax(220px, 1.2fr) minmax(320px, 2fr) auto;
-            gap: 10px;
-            color: var(--text-soft, #6b7280);
-            font-size: 12px;
-            font-weight: 700;
-            margin-bottom: 8px;
+            min-width: 120px;
         }
         .game-level-actions {
             display: flex;
             justify-content: flex-end;
             margin-top: 10px;
         }
+        .games-level-chip-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+            padding: 10px 12px;
+            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.04);
+            border: 1px solid rgba(148, 163, 184, 0.16);
+        }
+        .games-level-chip-stack strong {
+            color: var(--text, #0f172a);
+            font-size: 13px;
+            font-weight: 800;
+        }
+        .games-level-chip-detail {
+            color: var(--text-soft, #6b7280);
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.8;
+        }
         @media (max-width: 640px) {
-            .game-level-row,
-            .game-level-row-head {
+            .games-form-card {
+                position: static;
+            }
+            .game-level-row {
                 grid-template-columns: 1fr;
             }
+            .game-level-row-actions,
             .game-level-row .btn {
                 width: 100%;
             }
@@ -572,6 +611,18 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
         body.dark-mode .games-level-chip {
             background: rgba(148, 163, 184, 0.18);
             color: #e2e8f0;
+        }
+        body.dark-mode .game-level-row,
+        body.dark-mode .games-level-chip-stack {
+            background: rgba(15, 23, 42, 0.72);
+            border-color: rgba(96, 165, 250, 0.18);
+        }
+        body.dark-mode .game-level-field-label,
+        body.dark-mode .games-level-chip-stack strong {
+            color: #f8fafc;
+        }
+        body.dark-mode .games-level-chip-detail {
+            color: #cbd5e1;
         }
     </style>
 </head>
@@ -687,30 +738,33 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
 
                     <div class="form-group">
                         <label>مستويات اللعبة</label>
-                        <div class="game-level-row-head" aria-hidden="true">
-                            <span>اسم المستوى</span>
-                            <span>تفاصيل المستوى</span>
-                            <span>الإجراء</span>
-                        </div>
                         <div class="game-level-rows" id="gameLevelRows">
                             <?php foreach ($formData["game_level_rows"] as $row): ?>
                                 <div class="game-level-row">
-                                    <input
-                                        type="text"
-                                        name="level_name[]"
-                                        maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>"
-                                        placeholder="اسم المستوى"
-                                        aria-label="اسم مستوى اللعبة"
-                                        value="<?php echo htmlspecialchars((string)($row["level_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>"
-                                    >
-                                    <textarea
-                                        name="level_details[]"
-                                        maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>"
-                                        placeholder="تفاصيل المستوى"
-                                        aria-label="تفاصيل مستوى اللعبة"
-                                        rows="3"
-                                    ><?php echo htmlspecialchars((string)($row["level_details"] ?? ""), ENT_QUOTES, "UTF-8"); ?></textarea>
-                                    <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
+                                    <div class="game-level-field">
+                                        <span class="game-level-field-label">اسم المستوى</span>
+                                        <input
+                                            type="text"
+                                            name="level_name[]"
+                                            maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>"
+                                            placeholder="مثال: مبتدئ"
+                                            aria-label="اسم مستوى اللعبة"
+                                            value="<?php echo htmlspecialchars((string)($row["level_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>"
+                                        >
+                                    </div>
+                                    <div class="game-level-field">
+                                        <span class="game-level-field-label">تفاصيل المستوى</span>
+                                        <textarea
+                                            name="level_details[]"
+                                            maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>"
+                                            placeholder="اكتب وصفًا مختصرًا وواضحًا للمستوى"
+                                            aria-label="تفاصيل مستوى اللعبة"
+                                            rows="3"
+                                        ><?php echo htmlspecialchars((string)($row["level_details"] ?? ""), ENT_QUOTES, "UTF-8"); ?></textarea>
+                                    </div>
+                                    <div class="game-level-row-actions">
+                                        <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
+                                    </div>
                                 </div>
                             <?php endforeach; ?>
                         </div>
@@ -784,10 +838,10 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                                             <?php else: ?>
                                                 <div class="games-levels-list">
                                                     <?php foreach ($gameLevels as $level): ?>
-                                                        <div class="games-level-chip" style="display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
-                                                            <span><?php echo htmlspecialchars((string)($level["level_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?></span>
+                                                        <div class="games-level-chip-stack">
+                                                            <strong><?php echo htmlspecialchars((string)($level["level_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?></strong>
                                                             <?php if (!empty($level["level_details"])): ?>
-                                                                <small style="color:var(--text-soft,#6b7280);font-weight:600;"><?php echo htmlspecialchars((string)$level["level_details"], ENT_QUOTES, "UTF-8"); ?></small>
+                                                                <span class="games-level-chip-detail"><?php echo htmlspecialchars((string)$level["level_details"], ENT_QUOTES, "UTF-8"); ?></span>
                                                             <?php endif; ?>
                                                         </div>
                                                     <?php endforeach; ?>
@@ -878,9 +932,17 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
             const row = document.createElement('div');
             row.className = 'game-level-row';
             row.innerHTML = `
-                <input type="text" name="level_name[]" maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>" placeholder="اسم المستوى" aria-label="اسم مستوى اللعبة">
-                <textarea name="level_details[]" maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>" placeholder="تفاصيل المستوى" aria-label="تفاصيل مستوى اللعبة" rows="3"></textarea>
-                <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
+                <div class="game-level-field">
+                    <span class="game-level-field-label">اسم المستوى</span>
+                    <input type="text" name="level_name[]" maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>" placeholder="مثال: مبتدئ" aria-label="اسم مستوى اللعبة">
+                </div>
+                <div class="game-level-field">
+                    <span class="game-level-field-label">تفاصيل المستوى</span>
+                    <textarea name="level_details[]" maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>" placeholder="اكتب وصفًا مختصرًا وواضحًا للمستوى" aria-label="تفاصيل مستوى اللعبة" rows="3"></textarea>
+                </div>
+                <div class="game-level-row-actions">
+                    <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
+                </div>
             `;
             return row;
         };
