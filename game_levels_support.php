@@ -190,7 +190,8 @@ function normalizeGameLevelRecordsInput($value)
     $seen = [];
 
     foreach ($lines as $line) {
-        $normalizedRecord = normalizeGameLevelRecordValues(...parseGameLevelInputLine($line));
+        [$levelName, $levelDetails] = parseGameLevelInputLine($line);
+        $normalizedRecord = normalizeGameLevelRecordValues($levelName, $levelDetails);
         if ($normalizedRecord === null) {
             continue;
         }

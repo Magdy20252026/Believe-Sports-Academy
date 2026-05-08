@@ -207,8 +207,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             ];
             $formData["game_level_rows"] = buildGameLevelFormRows($_POST["level_name"] ?? [], $_POST["level_details"] ?? []);
             $hasSubmittedGameLevelRows = hasAnyGameLevelFormRowInput($formData["game_level_rows"]);
+            $submittedLevelNames = array_column($formData["game_level_rows"], "level_name");
+            $submittedLevelDetails = array_column($formData["game_level_rows"], "level_details");
             $gameLevelRecords = $hasSubmittedGameLevelRows
-                ? normalizeGameLevelRecordsFormInput($_POST["level_name"] ?? [], $_POST["level_details"] ?? [])
+                ? normalizeGameLevelRecordsFormInput($submittedLevelNames, $submittedLevelDetails)
                 : normalizeGameLevelRecordsInput(trim((string)($_POST["levels_text"] ?? "")));
             $gameGroupLevels = normalizeGameLevelsInput($formData["group_levels_text"]);
 
