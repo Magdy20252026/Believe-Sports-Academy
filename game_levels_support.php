@@ -131,9 +131,26 @@ function ensureGameGroupLevelsTable(PDO $pdo)
 
 function normalizeGameLevelsInput($value)
 {
-    return array_map(function ($levelRecord) {
-        return (string)($levelRecord['level_name'] ?? '');
-    }, normalizeGameLevelRecordsInput($value));
+    $rawValue = str_replace(["\r\n", "\r"], "\n", (string)$value);
+    $lines = explode("\n", $rawValue);
+    $levels = [];
+    $seen = [];
+
+    foreach ($lines as $line) {
+        $levelName = trim((string)explode('|', $line, 2)[0]);
+        if ($levelName === '' || mb_strlen($levelName) > GAME_LEVEL_MAX_LENGTH) {
+            continue;
+        }
+
+        if (isset($seen[$levelName])) {
+            continue;
+        }
+
+        $seen[$levelName] = true;
+        $levels[] = $levelName;
+    }
+
+    return $levels;
 }
 
 function normalizeGameLevelRecordsInput($value)
@@ -191,9 +208,19 @@ function formatGameLevelRecordsForTextarea(array $levels)
 
 function fetchGameLevels(PDO $pdo, $gameId)
 {
-    return array_map(function ($levelRecord) {
-        return (string)($levelRecord['level_name'] ?? '');
-    }, fetchGameLevelRecords($pdo, $gameId));
+    ensureGameLevelsTable($pdo);
+
+    $stmt = $pdo->prepare(
+        "SELECT level_name
+         FROM game_levels
+         WHERE game_id = ?
+         ORDER BY sort_order ASC, id ASC"
+    );
+    $stmt->execute([(int)$gameId]);
+
+    return array_values(array_filter(array_map(function ($levelName) {
+        return trim((string)$levelName);
+    }, $stmt->fetchAll(PDO::FETCH_COLUMN))));
 }
 
 function fetchGameLevelRecords(PDO $pdo, $gameId)
