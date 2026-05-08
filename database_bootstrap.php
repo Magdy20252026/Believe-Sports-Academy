@@ -839,7 +839,6 @@ function seedDefaultApplicationData(PDO $pdo)
         return;
     }
 
-    $adminUserId = 0;
     try {
         $insertAdminStmt = $pdo->prepare(
             "INSERT INTO users (username, password, role, can_access_all_games, can_access_all_branches, status)
@@ -847,13 +846,13 @@ function seedDefaultApplicationData(PDO $pdo)
         );
         $insertAdminStmt->execute(["admin", $passwordHash]);
         $adminUserId = (int)$pdo->lastInsertId();
-        error_log("seedDefaultApplicationData: default admin account was created with the configured default credentials.");
+        error_log("seedDefaultApplicationData: default admin account was created with the built-in default credentials.");
     } catch (Throwable $throwable) {
         error_log("seedDefaultApplicationData: failed to create default admin account: " . $throwable->getMessage());
         return;
     }
 
-    if ($adminUserId <= 0) {
+    if (!isset($adminUserId) || $adminUserId <= 0) {
         return;
     }
 
