@@ -1195,6 +1195,70 @@ function formatTrainingTimeDisplay($value)
     return formatEgyptTimeForDisplay($value, "");
 }
 
+function decodePlayerScheduleDayTimes($storedValue, array $selectedDayKeys = [], $fallbackTime = '')
+{
+    $dayTimes = [];
+    $decodedValue = json_decode((string)$storedValue, true);
+    if (is_array($decodedValue)) {
+        foreach ($decodedValue as $dayKey => $timeValue) {
+            $dayKey = trim((string)$dayKey);
+            $normalizedTime = normalizeTrainingTimeValue($timeValue);
+            if ($dayKey !== '' && isset(PLAYER_DAY_OPTIONS[$dayKey]) && $normalizedTime !== '') {
+                $dayTimes[$dayKey] = $normalizedTime;
+            }
+        }
+    }
+
+    $selectedDayKeys = sanitizePlayerTrainingDayKeys($selectedDayKeys);
+    if (count($dayTimes) === 0) {
+        $fallbackTime = normalizeTrainingTimeValue($fallbackTime);
+        if ($fallbackTime !== '' && count($selectedDayKeys) > 0) {
+            foreach ($selectedDayKeys as $dayKey) {
+                $dayTimes[$dayKey] = $fallbackTime;
+            }
+        }
+    }
+
+    if (count($selectedDayKeys) > 0) {
+        $filteredDayTimes = [];
+        foreach ($selectedDayKeys as $dayKey) {
+            if (isset($dayTimes[$dayKey])) {
+                $filteredDayTimes[$dayKey] = $dayTimes[$dayKey];
+            }
+        }
+        return $filteredDayTimes;
+    }
+
+    return $dayTimes;
+}
+
+function getPrimaryPlayerScheduleTime(array $selectedDayKeys, array $dayTimes)
+{
+    foreach ($selectedDayKeys as $dayKey) {
+        if (isset($dayTimes[$dayKey])) {
+            return $dayTimes[$dayKey];
+        }
+    }
+
+    return '';
+}
+
+function formatPlayerTrainingScheduleLabels(array $selectedDayKeys, array $dayTimes)
+{
+    $labels = [];
+    foreach ($selectedDayKeys as $dayKey) {
+        if (!isset(PLAYER_DAY_OPTIONS[$dayKey])) {
+            continue;
+        }
+
+        $dayLabel = PLAYER_DAY_OPTIONS[$dayKey];
+        $timeLabel = formatTrainingTimeDisplay($dayTimes[$dayKey] ?? '');
+        $labels[] = $timeLabel === '' ? $dayLabel : ($dayLabel . ': ' . $timeLabel);
+    }
+
+    return $labels;
+}
+
 function countPlayersInGroup(PDO $pdo, $gameId, $groupId, $excludePlayerId = 0)
 {
     if ((int)$groupId <= 0) {
