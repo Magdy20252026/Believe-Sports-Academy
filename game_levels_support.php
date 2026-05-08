@@ -137,7 +137,7 @@ function normalizeGameLevelsInput($value)
     $seen = [];
 
     foreach ($lines as $line) {
-        $levelName = trim((string)explode('|', $line, 2)[0]);
+        [$levelName] = parseGameLevelInputLine($line);
         if ($levelName === '' || mb_strlen($levelName) > GAME_LEVEL_MAX_LENGTH) {
             continue;
         }
@@ -153,6 +153,15 @@ function normalizeGameLevelsInput($value)
     return $levels;
 }
 
+function parseGameLevelInputLine($line)
+{
+    $parts = explode('|', (string)$line, 2);
+    return [
+        trim((string)($parts[0] ?? '')),
+        trim((string)($parts[1] ?? '')),
+    ];
+}
+
 function normalizeGameLevelRecordsInput($value)
 {
     $rawValue = str_replace(["\r\n", "\r"], "\n", (string)$value);
@@ -161,9 +170,7 @@ function normalizeGameLevelRecordsInput($value)
     $seen = [];
 
     foreach ($lines as $line) {
-        $parts = explode('|', $line, 2);
-        $levelName = trim((string)($parts[0] ?? ''));
-        $levelDetails = trim((string)($parts[1] ?? ''));
+        [$levelName, $levelDetails] = parseGameLevelInputLine($line);
 
         if ($levelName === '' || mb_strlen($levelName) > GAME_LEVEL_MAX_LENGTH) {
             continue;

@@ -860,7 +860,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
                                                 } elseif (!$isActive) {
                                                     echo 'مستوى باللعبة';
                                                 } else {
-                                                    echo '—';
+                                                    echo pportEsc('—');
                                                 }
                                                 ?>
                                             </div>
