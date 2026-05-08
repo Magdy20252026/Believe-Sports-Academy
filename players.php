@@ -1767,6 +1767,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const groupsData = parseEmbeddedJson('playerGroupsData', {});
     const dayLabels = parseEmbeddedJson('playerDayLabels', {});
     let selectedDays = parseEmbeddedJson('playerInitialDays', []);
+    const selectGroupScheduleMessage = 'اختر مستوى المجموعة ثم المجموعة لعرض الجدول.';
 
     const hasPlayerFormQueryParam = function (parameterName, expectedValue) {
         const params = new URLSearchParams(window.location.search);
@@ -1813,22 +1814,15 @@ document.addEventListener('DOMContentLoaded', function () {
         selectedDays = selectedDays.filter(dayKey => dayLabels[dayKey]);
         trainingDaysContainer.innerHTML = '';
         Object.keys(dayLabels).forEach(dayKey => {
-            const wrapper = document.createElement('label');
+            const wrapper = document.createElement('div');
             wrapper.className = 'trainer-day-chip';
+            wrapper.setAttribute('role', 'listitem');
+            wrapper.setAttribute('aria-label', 'يوم التدريب ' + (dayLabels[dayKey] || dayKey) + ' يتم تحديده تلقائيًا من المجموعة المختارة');
             if (selectedDays.indexOf(dayKey) !== -1) {
                 wrapper.classList.add('is-selected');
             }
-            const input = document.createElement('input');
-            input.type = 'checkbox';
-            input.name = 'training_day_keys[]';
-            input.value = dayKey;
-            input.checked = selectedDays.indexOf(dayKey) !== -1;
-            input.disabled = true;
-            input.setAttribute('aria-label', 'يتم تحديد يوم التدريب تلقائيًا من المجموعة المختارة');
-            input.title = 'يتم تحديد يوم التدريب تلقائيًا من المجموعة المختارة';
             const span = document.createElement('span');
             span.textContent = dayLabels[dayKey];
-            wrapper.appendChild(input);
             wrapper.appendChild(span);
             trainingDaysContainer.appendChild(wrapper);
         });
@@ -1837,7 +1831,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const updateTrainingDaysHelper = function () {
         if (!trainingDaysHelper) return;
         if (!groupSelect || groupSelect.value === '') {
-            trainingDaysHelper.textContent = 'اختر مستوى المجموعة ثم المجموعة لعرض الجدول.';
+            trainingDaysHelper.textContent = selectGroupScheduleMessage;
         } else if (!selectedDays.length) {
             trainingDaysHelper.textContent = 'لا توجد أيام تدريب مسجلة في هذه المجموعة.';
         } else {
@@ -1857,7 +1851,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const cell = document.createElement('td');
             cell.colSpan = 2;
             cell.className = 'empty-cell';
-            cell.textContent = 'اختر مستوى المجموعة ثم المجموعة لعرض الجدول.';
+            cell.textContent = selectGroupScheduleMessage;
             row.appendChild(cell);
             playerSchedulePreviewBody.appendChild(row);
             return;
