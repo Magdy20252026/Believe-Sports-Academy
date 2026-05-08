@@ -691,6 +691,7 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                                         name="level_name[]"
                                         maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>"
                                         placeholder="اسم المستوى"
+                                        aria-label="اسم مستوى اللعبة"
                                         value="<?php echo htmlspecialchars((string)($row["level_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>"
                                     >
                                     <input
@@ -698,9 +699,10 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                                         name="level_details[]"
                                         maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>"
                                         placeholder="تفاصيل المستوى"
+                                        aria-label="تفاصيل مستوى اللعبة"
                                         value="<?php echo htmlspecialchars((string)($row["level_details"] ?? ""), ENT_QUOTES, "UTF-8"); ?>"
                                     >
-                                    <button type="button" class="btn btn-danger game-level-remove">حذف</button>
+                                    <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
                                 </div>
                             <?php endforeach; ?>
                         </div>
@@ -857,6 +859,7 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
                 const button = row.querySelector('.game-level-remove');
                 if (button) {
                     button.disabled = rows.length === 1;
+                    button.title = rows.length === 1 ? 'لا يمكن حذف آخر صف مستوى' : 'حذف صف مستوى اللعبة';
                 }
             });
         };
@@ -865,9 +868,9 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
             const row = document.createElement('div');
             row.className = 'game-level-row';
             row.innerHTML = `
-                <input type="text" name="level_name[]" maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>" placeholder="اسم المستوى">
-                <input type="text" name="level_details[]" maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>" placeholder="تفاصيل المستوى">
-                <button type="button" class="btn btn-danger game-level-remove">حذف</button>
+                <input type="text" name="level_name[]" maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>" placeholder="اسم المستوى" aria-label="اسم مستوى اللعبة">
+                <input type="text" name="level_details[]" maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>" placeholder="تفاصيل المستوى" aria-label="تفاصيل مستوى اللعبة">
+                <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
             `;
             return row;
         };
