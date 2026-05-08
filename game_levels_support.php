@@ -329,8 +329,8 @@ function saveGameLevels(PDO $pdo, $gameId, array $levels)
     );
 
     foreach (array_values($levels) as $index => $level) {
-        $levelName = is_array($level) ? trim((string)($level['level_name'] ?? '')) : trim((string)$level);
-        $levelDetails = is_array($level) ? trim((string)($level['level_details'] ?? '')) : '';
+        $levelName = trim((string)($level['level_name'] ?? ''));
+        $levelDetails = trim((string)($level['level_details'] ?? ''));
         if ($levelName === '') {
             continue;
         }

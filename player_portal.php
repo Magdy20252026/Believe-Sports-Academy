@@ -227,31 +227,23 @@ $currentLevel = $playerSpecificLevel !== ''
 $gameLevelRecords = fetchGameLevelRecords($pdo, $playerGameId);
 $groupLevelsList = $gameLevelRecords;
 $currentLevelDetails = '';
+$levelExists = false;
 
 foreach ($groupLevelsList as $levelRecord) {
     if ((string)($levelRecord["level_name"] ?? '') !== $currentLevel) {
         continue;
     }
 
+    $levelExists = true;
     $currentLevelDetails = trim((string)($levelRecord["level_details"] ?? ''));
     break;
 }
 
-if ($currentLevel !== '') {
-    $levelExists = false;
-    foreach ($groupLevelsList as $levelRecord) {
-        if ((string)($levelRecord["level_name"] ?? '') === $currentLevel) {
-            $levelExists = true;
-            break;
-        }
-    }
-
-    if (!$levelExists) {
-        $groupLevelsList[] = [
-            'level_name' => $currentLevel,
-            'level_details' => '',
-        ];
-    }
+if ($currentLevel !== '' && !$levelExists) {
+    $groupLevelsList[] = [
+        'level_name' => $currentLevel,
+        'level_details' => '',
+    ];
 }
 
 $storeProducts = [];
@@ -865,8 +857,10 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
                                                 <?php
                                                 if ($levelDetails !== '') {
                                                     echo pportEsc($levelDetails);
+                                                } elseif (!$isActive) {
+                                                    echo 'مستوى باللعبة';
                                                 } else {
-                                                    echo $isActive ? '🌟 مستواك الحالي' : 'مستوى باللعبة';
+                                                    echo '—';
                                                 }
                                                 ?>
                                             </div>
