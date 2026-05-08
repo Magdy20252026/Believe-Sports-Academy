@@ -807,7 +807,7 @@ function seedDefaultApplicationData(PDO $pdo)
         }
     }
 
-    $adminStmt = $pdo->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
+    $adminStmt = $pdo->prepare("SELECT 1 FROM users WHERE username = ? LIMIT 1");
     $adminStmt->execute(["admin"]);
     $adminUser = $adminStmt->fetch();
 
@@ -818,7 +818,7 @@ function seedDefaultApplicationData(PDO $pdo)
     try {
         $hasUsers = (bool)$pdo->query("SELECT 1 FROM users LIMIT 1")->fetchColumn();
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to inspect users, so the app cannot determine whether default admin seeding is still needed: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: failed to inspect users, so the app cannot determine whether default admin creation is still needed: " . $throwable->getMessage());
         return;
     }
 
