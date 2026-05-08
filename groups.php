@@ -182,6 +182,15 @@ function formatPercentageLabel($value)
     return number_format((float)$value, 2) . "%";
 }
 
+function escapeSqlLikePattern($value)
+{
+    return strtr((string)$value, [
+        "\\" => "\\\\",
+        "%" => "\\%",
+        "_" => "\\_",
+    ]);
+}
+
 function groupRecordExists(PDO $pdo, $gameId, $groupId)
 {
     $stmt = $pdo->prepare("SELECT id FROM sports_groups WHERE id = ? AND game_id = ? LIMIT 1");
@@ -963,6 +972,9 @@ $availableLevelsStmt = $pdo->prepare(
 );
 $availableLevelsStmt->execute([$currentGameId]);
 $availableLevels = $availableLevelsStmt->fetchAll(PDO::FETCH_COLUMN);
+if ($filterLevel !== "" && !in_array($filterLevel, $availableLevels, true)) {
+    $filterLevel = "";
+}
 
 $availableDaysCountsStmt = $pdo->prepare(
     "SELECT DISTINCT training_days_count
@@ -971,7 +983,10 @@ $availableDaysCountsStmt = $pdo->prepare(
      ORDER BY training_days_count ASC"
 );
 $availableDaysCountsStmt->execute([$currentGameId]);
-$availableDaysCounts = $availableDaysCountsStmt->fetchAll(PDO::FETCH_COLUMN);
+$availableDaysCounts = array_map("intval", $availableDaysCountsStmt->fetchAll(PDO::FETCH_COLUMN));
+if ($filterDaysCount !== null && !in_array($filterDaysCount, $availableDaysCounts, true)) {
+    $filterDaysCount = null;
+}
 
 $availableTimesStmt = $pdo->prepare(
     "SELECT DISTINCT training_time
@@ -985,6 +1000,9 @@ $availableTimesStmt->execute([$currentGameId]);
 $availableTimes = array_values(array_filter($availableTimesStmt->fetchAll(PDO::FETCH_COLUMN), function ($value) {
     return $value !== null && $value !== "";
 }));
+if ($filterTime !== "" && !in_array($filterTime, $availableTimes, true)) {
+    $filterTime = "";
+}
 
 $availableTrainersStmt = $pdo->prepare(
     "SELECT DISTINCT trainer_name
@@ -995,6 +1013,9 @@ $availableTrainersStmt = $pdo->prepare(
 );
 $availableTrainersStmt->execute([$currentGameId]);
 $availableTrainers = $availableTrainersStmt->fetchAll(PDO::FETCH_COLUMN);
+if ($filterTrainer !== "" && !in_array($filterTrainer, $availableTrainers, true)) {
+    $filterTrainer = "";
+}
 
 $groupPlayerCounts = fetchGroupPlayerCounts($pdo, $currentGameId);
 $groupsSql = "SELECT id, group_name, group_level, training_days_count, training_day_keys, training_time, training_day_times, trainings_count, exercises_count, max_players, trainer_name,
@@ -1004,8 +1025,8 @@ $groupsSql = "SELECT id, group_name, group_level, training_days_count, training_
 $groupsParams = [$currentGameId];
 
 if ($groupSearch !== "") {
-    $groupsSql .= " AND group_name LIKE ?";
-    $groupsParams[] = "%" . $groupSearch . "%";
+    $groupsSql .= " AND group_name LIKE ? ESCAPE '\\\\'";
+    $groupsParams[] = "%" . escapeSqlLikePattern($groupSearch) . "%";
 }
 if ($filterLevel !== "") {
     $groupsSql .= " AND group_level = ?";
@@ -1277,7 +1298,7 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
 
                 <div class="filter-actions">
                     <button type="submit" class="btn btn-primary">تصفية</button>
-                    <a href="<?php echo GROUPS_PAGE_HREF; ?>" class="btn btn-soft">إلغاء الفلاتر</a>
+                    <a href="<?php echo GROUPS_PAGE_HREF; ?>" class="btn btn-soft" aria-label="إلغاء الفلاتر">إلغاء الفلاتر</a>
                 </div>
             </form>
         </div>
