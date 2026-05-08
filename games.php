@@ -874,15 +874,15 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
             });
         };
 
-            const createRow = () => {
-                const row = document.createElement('div');
-                row.className = 'game-level-row';
-                row.innerHTML = `
-                    <input type="text" name="level_name[]" maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>" placeholder="اسم المستوى" aria-label="اسم مستوى اللعبة">
-                    <textarea name="level_details[]" maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>" placeholder="تفاصيل المستوى" aria-label="تفاصيل مستوى اللعبة" rows="3"></textarea>
-                    <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
-                `;
-                return row;
+        const createRow = () => {
+            const row = document.createElement('div');
+            row.className = 'game-level-row';
+            row.innerHTML = `
+                <input type="text" name="level_name[]" maxlength="<?php echo GAME_LEVEL_MAX_LENGTH; ?>" placeholder="اسم المستوى" aria-label="اسم مستوى اللعبة">
+                <textarea name="level_details[]" maxlength="<?php echo GAME_LEVEL_DETAILS_MAX_LENGTH; ?>" placeholder="تفاصيل المستوى" aria-label="تفاصيل مستوى اللعبة" rows="3"></textarea>
+                <button type="button" class="btn btn-danger game-level-remove" aria-label="حذف صف مستوى اللعبة">حذف</button>
+            `;
+            return row;
         };
 
         addButton.addEventListener('click', () => {
