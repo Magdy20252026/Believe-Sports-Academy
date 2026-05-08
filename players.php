@@ -1024,6 +1024,7 @@ foreach ($groups as $group) {
                 $group['training_day_times_map'] ?? []
             )
         ),
+        'training_time_label' => (string)($group['training_time_label'] ?? ''),
         'training_schedule' => array_map(function ($dayKey) use ($group) {
             $dayTimes = $group['training_day_times_map'] ?? [];
             $timeValue = $dayTimes[$dayKey] ?? '';
@@ -1595,7 +1596,7 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
                     </div>
                     <div class="form-group">
                         <label for="training_time">الموعد الأساسي للمجموعة</label>
-                        <input type="time" name="training_time" id="training_time" value="<?php echo htmlspecialchars(formatTrainingTimeLabel($formData['training_time']), ENT_QUOTES, 'UTF-8'); ?>" readonly>
+                        <input type="text" id="training_time" value="<?php echo htmlspecialchars(formatTrainingTimeDisplay($formData['training_time']), ENT_QUOTES, 'UTF-8'); ?>" readonly>
                     </div>
                     <div class="form-group">
                         <label for="subscription_price_display">سعر الاشتراك</label>
@@ -1816,8 +1817,6 @@ document.addEventListener('DOMContentLoaded', function () {
         Object.keys(dayLabels).forEach(dayKey => {
             const wrapper = document.createElement('div');
             wrapper.className = 'trainer-day-chip';
-            wrapper.setAttribute('role', 'listitem');
-            wrapper.setAttribute('aria-label', 'يوم التدريب ' + (dayLabels[dayKey] || dayKey) + ' يتم تحديده تلقائيًا من المجموعة المختارة');
             if (selectedDays.indexOf(dayKey) !== -1) {
                 wrapper.classList.add('is-selected');
             }
@@ -2006,7 +2005,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (resetScheduleFromGroup) {
             selectedDays = Array.isArray(group.training_day_keys) ? group.training_day_keys.slice() : [];
             if (trainingTimeInput) {
-                trainingTimeInput.value = group.training_time || '';
+                trainingTimeInput.value = group.training_time_label || group.training_time || '';
             }
         }
         subscriptionPriceDisplay.value = subscriptionPrice.toFixed(2);
