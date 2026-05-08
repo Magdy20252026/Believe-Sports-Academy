@@ -2,6 +2,7 @@
 
 const GAME_LEVEL_MAX_LENGTH = 150;
 const GAME_LEVEL_DETAILS_MAX_LENGTH = 1000;
+const GAME_LEVEL_INPUT_DELIMITER = '|';
 
 function ensureGameLevelsTable(PDO $pdo)
 {
@@ -155,7 +156,7 @@ function normalizeGameLevelsInput($value)
 
 function parseGameLevelInputLine($line)
 {
-    $parts = explode('|', (string)$line, 2);
+    $parts = explode(GAME_LEVEL_INPUT_DELIMITER, (string)$line, 2);
     return [
         trim((string)($parts[0] ?? '')),
         trim((string)($parts[1] ?? '')),
@@ -206,7 +207,7 @@ function formatGameLevelRecordsForTextarea(array $levels)
 
         $levelDetails = trim((string)($level['level_details'] ?? ''));
         $lines[] = $levelDetails !== ''
-            ? $levelName . ' | ' . $levelDetails
+            ? $levelName . ' ' . GAME_LEVEL_INPUT_DELIMITER . ' ' . $levelDetails
             : $levelName;
     }
 

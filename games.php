@@ -192,7 +192,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif (gameNameTakenInBranch($pdo, $formData["branch_id"], $formData["name"], $formData["id"])) {
                 $error = "هذه اللعبة موجودة بالفعل في هذا الفرع.";
             } elseif ($formData["levels_text"] !== "" && count($gameLevelRecords) === 0) {
-                $error = "مستويات اللعبة غير صالحة. استخدم الصيغة: اسم المستوى أو اسم المستوى | التفاصيل";
+                $error = "مستويات اللعبة غير صالحة. استخدم الصيغة: اسم المستوى أو اسم المستوى " . GAME_LEVEL_INPUT_DELIMITER . " التفاصيل";
             } elseif ($formData["group_levels_text"] !== "" && count($gameGroupLevels) === 0) {
                 $error = "مستويات المجموعات غير صالحة.";
             } else {
@@ -601,10 +601,10 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث اللعبة" : "إضاف
 
                     <div class="form-group">
                         <label for="levels_text">مستويات اللعبة</label>
-                        <textarea name="levels_text" id="levels_text" rows="6" placeholder="مثال: مبتدئ | أساسيات اللعبة
-متوسط | تطوير المهارات
-متقدم | بطولات ومنافسات"><?php echo htmlspecialchars($formData["levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
-                        <small style="color:var(--text-soft,#6b7280);">اكتب كل مستوى في سطر مستقل، ويمكنك إضافة تفاصيله بعد علامة | ليظهر المستوى وتفاصيله داخل بوابة اللاعب.</small>
+                        <textarea name="levels_text" id="levels_text" rows="6" placeholder="مثال: مبتدئ <?php echo GAME_LEVEL_INPUT_DELIMITER; ?> أساسيات اللعبة
+متوسط <?php echo GAME_LEVEL_INPUT_DELIMITER; ?> تطوير المهارات
+متقدم <?php echo GAME_LEVEL_INPUT_DELIMITER; ?> بطولات ومنافسات"><?php echo htmlspecialchars($formData["levels_text"], ENT_QUOTES, "UTF-8"); ?></textarea>
+                        <small style="color:var(--text-soft,#6b7280);">اكتب كل مستوى في سطر مستقل، ويمكنك إضافة تفاصيله بعد علامة <?php echo htmlspecialchars(GAME_LEVEL_INPUT_DELIMITER, ENT_QUOTES, "UTF-8"); ?> ليظهر المستوى وتفاصيله داخل بوابة اللاعب.</small>
                     </div>
 
                     <div class="form-group">
