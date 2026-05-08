@@ -807,9 +807,31 @@ function seedDefaultApplicationData(PDO $pdo)
         }
     }
 
-    $adminStmt = $pdo->prepare("SELECT id, password, role FROM users WHERE username = ? LIMIT 1");
+    $adminStmt = $pdo->prepare("SELECT 1 FROM users WHERE username = ? LIMIT 1");
     $adminStmt->execute(["admin"]);
     $adminUser = $adminStmt->fetch();
+
+    if ($adminUser) {
+        return;
+    }
+
+    try {
+        $hasUsers = (bool)$pdo->query("SELECT 1 FROM users LIMIT 1")->fetchColumn();
+    } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to inspect users, so the app cannot determine whether default admin creation should proceed: " . $throwable->getMessage());
+        return;
+    }
+
+    try {
+        $hasActivityLog = (bool)$pdo->query("SELECT 1 FROM activity_log LIMIT 1")->fetchColumn();
+    } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to inspect activity log rows, so the app cannot determine whether this is still a fresh installation: " . $throwable->getMessage());
+        return;
+    }
+
+    if ($hasUsers || $hasActivityLog) {
+        return;
+    }
 
     $passwordHash = password_hash("123456", PASSWORD_DEFAULT);
     if ($passwordHash === false) {
@@ -817,39 +839,20 @@ function seedDefaultApplicationData(PDO $pdo)
         return;
     }
 
-    if ($adminUser) {
-        $storedPassword = (string)($adminUser["password"] ?? "");
-        $passwordInfo = password_get_info($storedPassword);
-        $passwordMatches = !empty($passwordInfo["algo"]) && password_verify("123456", $storedPassword);
-
-        if (!$passwordMatches || (string)($adminUser["role"] ?? "") !== "مدير") {
-            $updateAdminStmt = $pdo->prepare(
-                "UPDATE users
-                 SET password = ?, role = 'مدير', can_access_all_games = 1, can_access_all_branches = 1, status = 1
-                 WHERE id = ?"
-            );
-            $updateAdminStmt->execute([$passwordHash, (int)$adminUser["id"]]);
-        } else {
-            $updateFlagsStmt = $pdo->prepare(
-                "UPDATE users
-                 SET role = 'مدير', can_access_all_games = 1, can_access_all_branches = 1, status = 1
-                 WHERE id = ?"
-            );
-            $updateFlagsStmt->execute([(int)$adminUser["id"]]);
-            error_log("seedDefaultApplicationData: default admin account is still using the default password 123456. Change it after first login.");
-        }
-
-        $adminUserId = (int)$adminUser["id"];
-    } else {
+    try {
         $insertAdminStmt = $pdo->prepare(
             "INSERT INTO users (username, password, role, can_access_all_games, can_access_all_branches, status)
              VALUES (?, ?, 'مدير', 1, 1, 1)"
         );
         $insertAdminStmt->execute(["admin", $passwordHash]);
         $adminUserId = (int)$pdo->lastInsertId();
+        error_log("seedDefaultApplicationData: default admin account was created with the built-in default credentials.");
+    } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to create default admin account: " . $throwable->getMessage());
+        return;
     }
 
-    if ($adminUserId <= 0) {
+    if (!isset($adminUserId) || $adminUserId <= 0) {
         return;
     }
 
@@ -859,7 +862,7 @@ function seedDefaultApplicationData(PDO $pdo)
              SELECT ?, b.id FROM branches b WHERE b.status = 1"
         )->execute([$adminUserId]);
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to grant admin branch access: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: default admin account was created, but granting branch access failed: " . $throwable->getMessage());
     }
 
     try {
@@ -868,6 +871,6 @@ function seedDefaultApplicationData(PDO $pdo)
              SELECT ?, g.id FROM games g WHERE g.status = 1"
         )->execute([$adminUserId]);
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to grant admin game access: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: default admin account was created, but granting game access failed: " . $throwable->getMessage());
     }
 }
