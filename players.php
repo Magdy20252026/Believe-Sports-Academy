@@ -1069,16 +1069,16 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
         .player-search-form {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            align-items: flex-end;
+            display: grid;
+            grid-template-columns: minmax(260px, 1.6fr) repeat(4, minmax(150px, 0.9fr)) auto;
+            gap: 12px;
+            align-items: end;
         }
         .player-filter-select-wrapper {
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            min-width: 160px;
+            gap: 6px;
+            min-width: 0;
         }
         .player-filter-label {
             font-size: 11px;
@@ -1094,9 +1094,10 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
         }
         .player-filter-select select {
             width: 100%;
-            padding: 8px 32px 8px 12px;
+            min-height: 52px;
+            padding: 10px 34px 10px 14px;
             border: 1.5px solid var(--border-color, #e5e7eb);
-            border-radius: 10px;
+            border-radius: 14px;
             background: var(--card-bg, #fff);
             color: var(--text-primary, #111827);
             font-family: inherit;
@@ -1127,20 +1128,93 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
         .player-filter-actions {
             display: flex;
             gap: 8px;
-            align-items: flex-end;
-            padding-bottom: 0;
+            align-items: stretch;
+            flex-wrap: wrap;
+        }
+        .player-filter-actions .btn {
+            min-width: 120px;
         }
         .trainer-search-field {
             display: flex;
             align-items: center;
             gap: 8px;
-            flex: 1;
-            min-width: 220px;
+            min-height: 52px;
+            padding-inline: 14px;
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            background: linear-gradient(135deg, rgba(47, 91, 234, 0.04), rgba(124, 58, 237, 0.03));
+        }
+        .trainer-search-field input {
+            min-width: 0;
+            border: none;
+            background: transparent;
+            box-shadow: none;
+            padding-inline: 0;
+        }
+        .trainer-search-field input:focus {
+            box-shadow: none;
+        }
+        .player-checkbox-group {
+            display: flex;
+            align-items: center;
+            min-height: 56px;
+            padding: 12px 14px;
+            border-radius: 18px;
+            border: 1px dashed rgba(47, 91, 234, 0.24);
+            background: linear-gradient(135deg, rgba(47, 91, 234, 0.05), rgba(16, 185, 129, 0.05));
+        }
+        .player-checkbox-label {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            margin: 0;
+            cursor: pointer;
+            color: var(--text, #0f172a);
+            font-weight: 800;
+        }
+        .player-checkbox-input {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary, #2563eb);
+        }
+        .player-modal-card {
+            width: min(1320px, 100%);
+            border-radius: 28px;
+            box-shadow: 0 28px 60px rgba(15, 23, 42, 0.18);
+        }
+        .players-page .player-form .trainer-form-section {
+            background: linear-gradient(135deg, rgba(47, 91, 234, 0.05), rgba(124, 58, 237, 0.04));
+            border-color: rgba(47, 91, 234, 0.12);
+        }
+        .players-page .player-form input[readonly] {
+            background: rgba(15, 23, 42, 0.04);
+            font-weight: 700;
+        }
+        body.dark-mode .trainer-search-field {
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.88), rgba(30, 41, 59, 0.9));
+            border-color: rgba(96, 165, 250, 0.18);
+        }
+        body.dark-mode .player-checkbox-group {
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.12), rgba(16, 185, 129, 0.08));
+            border-color: rgba(96, 165, 250, 0.28);
+        }
+        body.dark-mode .player-checkbox-label {
+            color: #f8fafc;
+        }
+        body.dark-mode .players-page .player-form input[readonly] {
+            background: rgba(15, 23, 42, 0.75);
+        }
+        @media (max-width: 1200px) {
+            .player-search-form {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+            .trainer-search-field {
+                grid-column: 1 / -1;
+            }
         }
         @media (max-width: 768px) {
-            .player-filter-select-wrapper {
-                min-width: 140px;
-                flex: 1;
+            .player-search-form {
+                grid-template-columns: 1fr;
             }
             .player-filter-actions {
                 width: 100%;
@@ -1480,9 +1554,9 @@ $cancelTarget = $returnTarget !== '' ? $returnTarget : 'players.php';
                         <label for="player_phone2">رقم هاتف ثانٍ (اختياري - 11 رقم)</label>
                         <input type="tel" name="phone2" id="player_phone2" inputmode="numeric" pattern="[0-9]{11}" maxlength="11" title="يجب إدخال 11 رقم بالضبط أو تركه فارغاً" value="<?php echo htmlspecialchars($formData['phone2'], ENT_QUOTES, 'UTF-8'); ?>">
                     </div>
-                    <div class="form-group" style="display:flex; align-items:center; gap:8px;">
-                        <label for="whatsapp_group_joined" style="display:flex; align-items:center; gap:8px; cursor:pointer; margin:0;">
-                            <input type="checkbox" name="whatsapp_group_joined" id="whatsapp_group_joined" value="1" <?php echo !empty($formData['whatsapp_group_joined']) ? 'checked' : ''; ?> style="width:18px; height:18px;">
+                    <div class="form-group player-checkbox-group">
+                        <label class="player-checkbox-label" for="whatsapp_group_joined">
+                            <input class="player-checkbox-input" type="checkbox" name="whatsapp_group_joined" id="whatsapp_group_joined" value="1" <?php echo !empty($formData['whatsapp_group_joined']) ? 'checked' : ''; ?>>
                             <span>انضم لجروب الواتساب</span>
                         </label>
                     </div>
