@@ -222,6 +222,7 @@ foreach ($groups as $group) {
     );
     $groupMap[(int)$group['id']] = $group;
 }
+$groups = array_values($groupMap);
 
 $gameLevelOptions = fetchGameLevels($pdo, $currentGameId);
 
