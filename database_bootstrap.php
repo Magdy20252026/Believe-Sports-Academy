@@ -816,16 +816,16 @@ function seedDefaultApplicationData(PDO $pdo)
     }
 
     try {
-        $usersCount = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+        $usersCount = $pdo->query("SELECT 1 FROM users LIMIT 1")->fetchColumn() ? 1 : 0;
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to count users, so the app cannot determine whether default admin seeding is still needed: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: failed to inspect users, so the app cannot determine whether default admin seeding is still needed: " . $throwable->getMessage());
         return;
     }
 
     try {
-        $activityLogCount = (int)$pdo->query("SELECT COUNT(*) FROM activity_log")->fetchColumn();
+        $activityLogCount = $pdo->query("SELECT 1 FROM activity_log LIMIT 1")->fetchColumn() ? 1 : 0;
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to count activity log rows, so the app cannot determine whether this is still a fresh installation: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: failed to inspect activity log rows, so the app cannot determine whether this is still a fresh installation: " . $throwable->getMessage());
         return;
     }
 
