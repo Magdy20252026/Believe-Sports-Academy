@@ -71,6 +71,8 @@ function ensurePlayersTables(PDO $pdo)
             training_day_keys VARCHAR(255) NOT NULL DEFAULT '',
             training_time TIME NULL DEFAULT NULL,
             password VARCHAR(255) NOT NULL DEFAULT '123456',
+            created_by_user_id INT(11) NULL DEFAULT NULL,
+            updated_by_user_id INT(11) NULL DEFAULT NULL,
             created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
@@ -224,6 +226,8 @@ function ensurePlayersTables(PDO $pdo)
         'training_day_keys' => "ALTER TABLE players ADD COLUMN training_day_keys VARCHAR(255) NOT NULL DEFAULT '' AFTER academy_amount",
         'training_time' => "ALTER TABLE players ADD COLUMN training_time TIME NULL DEFAULT NULL AFTER training_day_keys",
         'password' => "ALTER TABLE players ADD COLUMN password VARCHAR(255) NOT NULL DEFAULT '123456' AFTER training_time",
+        'created_by_user_id' => "ALTER TABLE players ADD COLUMN created_by_user_id INT(11) NULL DEFAULT NULL AFTER password",
+        'updated_by_user_id' => "ALTER TABLE players ADD COLUMN updated_by_user_id INT(11) NULL DEFAULT NULL AFTER created_by_user_id",
     ];
     $requiredSubscriptionHistoryColumns = [
         'player_level' => "ALTER TABLE player_subscription_history ADD COLUMN player_level VARCHAR(150) NOT NULL DEFAULT '' AFTER group_level",
