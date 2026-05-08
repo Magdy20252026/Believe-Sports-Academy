@@ -839,6 +839,7 @@ function seedDefaultApplicationData(PDO $pdo)
         return;
     }
 
+    $adminUserId = 0;
     try {
         $insertAdminStmt = $pdo->prepare(
             "INSERT INTO users (username, password, role, can_access_all_games, can_access_all_branches, status)
