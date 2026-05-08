@@ -818,14 +818,14 @@ function seedDefaultApplicationData(PDO $pdo)
     try {
         $usersCount = (int)$pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to count users: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: failed to count users, so the app cannot determine whether default admin seeding is still needed: " . $throwable->getMessage());
         return;
     }
 
     try {
         $activityLogCount = (int)$pdo->query("SELECT COUNT(*) FROM activity_log")->fetchColumn();
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to count activity log rows: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: failed to count activity log rows, so the app cannot determine whether this is still a fresh installation: " . $throwable->getMessage());
         return;
     }
 
@@ -847,17 +847,26 @@ function seedDefaultApplicationData(PDO $pdo)
         $insertAdminStmt->execute(["admin", $passwordHash]);
         $adminUserId = (int)$pdo->lastInsertId();
         error_log("seedDefaultApplicationData: default admin account was created. Change its password after first login.");
+    } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: failed to create default admin account: " . $throwable->getMessage());
+        return;
+    }
 
+    try {
         $pdo->prepare(
             "INSERT IGNORE INTO user_branches (user_id, branch_id)
              SELECT ?, b.id FROM branches b WHERE b.status = 1"
         )->execute([$adminUserId]);
+    } catch (Throwable $throwable) {
+        error_log("seedDefaultApplicationData: default admin account was created, but granting branch access failed: " . $throwable->getMessage());
+    }
 
+    try {
         $pdo->prepare(
             "INSERT IGNORE INTO user_games (user_id, game_id)
              SELECT ?, g.id FROM games g WHERE g.status = 1"
         )->execute([$adminUserId]);
     } catch (Throwable $throwable) {
-        error_log("seedDefaultApplicationData: failed to create default admin account: " . $throwable->getMessage());
+        error_log("seedDefaultApplicationData: default admin account was created, but granting game access failed: " . $throwable->getMessage());
     }
 }
