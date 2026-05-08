@@ -864,11 +864,11 @@ $filterGroupLevel = trim((string)($_GET['filter_group_level'] ?? ''));
 $filterStatus = trim((string)($_GET['filter_status'] ?? ''));
 $filterJoined = isset($_GET['filter_joined']) ? trim((string)$_GET['filter_joined']) : '';
 
-$allPlayers = array_map(function ($row) use ($today) {
+$allPlayers = array_map(function ($row) use ($today, $groupMap) {
         return buildPlayerDisplayRow($row, $today, $groupMap);
     }, fetchPlayersWithAttendance($pdo, $currentGameId));
 
-$filteredPlayers = array_map(function ($row) use ($today) {
+$filteredPlayers = array_map(function ($row) use ($today, $groupMap) {
     return buildPlayerDisplayRow($row, $today, $groupMap);
 }, fetchPlayersWithAttendance($pdo, $currentGameId, [
     'search' => $searchTerm,
