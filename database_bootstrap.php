@@ -816,20 +816,20 @@ function seedDefaultApplicationData(PDO $pdo)
     }
 
     try {
-        $usersCount = $pdo->query("SELECT 1 FROM users LIMIT 1")->fetchColumn() ? 1 : 0;
+        $hasUsers = (bool)$pdo->query("SELECT 1 FROM users LIMIT 1")->fetchColumn();
     } catch (Throwable $throwable) {
         error_log("seedDefaultApplicationData: failed to inspect users, so the app cannot determine whether default admin seeding is still needed: " . $throwable->getMessage());
         return;
     }
 
     try {
-        $activityLogCount = $pdo->query("SELECT 1 FROM activity_log LIMIT 1")->fetchColumn() ? 1 : 0;
+        $hasActivityLog = (bool)$pdo->query("SELECT 1 FROM activity_log LIMIT 1")->fetchColumn();
     } catch (Throwable $throwable) {
         error_log("seedDefaultApplicationData: failed to inspect activity log rows, so the app cannot determine whether this is still a fresh installation: " . $throwable->getMessage());
         return;
     }
 
-    if ($usersCount > 0 || $activityLogCount > 0) {
+    if ($hasUsers || $hasActivityLog) {
         return;
     }
 
