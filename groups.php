@@ -9,6 +9,8 @@ require_once "game_levels_support.php";
 requireAuthenticatedUser();
 requireMenuAccess("groups");
 
+const GROUPS_PAGE_HREF = "groups.php";
+
 function ensureSportsGroupsTable(PDO $pdo)
 {
     $pdo->exec(
@@ -178,6 +180,15 @@ function normalizeGroupPercentageValue($value)
 function formatPercentageLabel($value)
 {
     return number_format((float)$value, 2) . "%";
+}
+
+function escapeSqlLikePattern($value)
+{
+    return strtr((string)$value, [
+        "\\" => "\\\\",
+        "%" => "\\%",
+        "_" => "\\_",
+    ]);
 }
 
 function groupRecordExists(PDO $pdo, $gameId, $groupId)
@@ -937,18 +948,124 @@ sort($trainerSelectOptions, SORT_NATURAL);
 $hasTrainerOptions = count($trainerSelectOptions) > 0;
 $initialTrainingDayTimeParts = buildGroupTrainingDayTimesFormData($formData["training_day_times"]);
 
-$groupPlayerCounts = fetchGroupPlayerCounts($pdo, $currentGameId);
-$groupsStmt = $pdo->prepare(
-    "SELECT id, group_name, group_level, training_days_count, training_day_keys, training_time, training_day_times, trainings_count, exercises_count, max_players, trainer_name,
-            assistant_trainer_name, ballet_trainer_name, academy_percentage, walkers_price, other_weapons_price, civilian_price, created_at, updated_at, created_by_user_id, updated_by_user_id
+$groupSearch = isset($_GET["group_search"]) ? trim((string)$_GET["group_search"]) : "";
+$filterLevel = isset($_GET["filter_level"]) ? trim((string)$_GET["filter_level"]) : "";
+$filterDaysCount = isset($_GET["filter_days_count"]) && $_GET["filter_days_count"] !== "" ? (int)$_GET["filter_days_count"] : null;
+$filterDays = isset($_GET["filter_days"]) && is_array($_GET["filter_days"]) ? array_map("trim", $_GET["filter_days"]) : [];
+$filterTime = isset($_GET["filter_time"]) ? trim((string)$_GET["filter_time"]) : "";
+$filterTrainer = isset($_GET["filter_trainer"]) ? trim((string)$_GET["filter_trainer"]) : "";
+$filterGroupStatus = isset($_GET["filter_group_status"]) ? trim((string)$_GET["filter_group_status"]) : "";
+
+$filterDays = array_values(array_unique(array_filter($filterDays, function ($dayKey) {
+    return isset(PLAYER_DAY_OPTIONS[$dayKey]);
+})));
+
+if (!in_array($filterGroupStatus, ["complete", "incomplete"], true)) {
+    $filterGroupStatus = "";
+}
+
+$availableLevelsStmt = $pdo->prepare(
+    "SELECT DISTINCT group_level
+     FROM sports_groups
+     WHERE game_id = ? AND group_level <> ''
+     ORDER BY group_level ASC"
+);
+$availableLevelsStmt->execute([$currentGameId]);
+$availableLevels = $availableLevelsStmt->fetchAll(PDO::FETCH_COLUMN);
+if ($filterLevel !== "" && !in_array($filterLevel, $availableLevels, true)) {
+    $filterLevel = "";
+}
+
+$availableDaysCountsStmt = $pdo->prepare(
+    "SELECT DISTINCT training_days_count
      FROM sports_groups
      WHERE game_id = ?
-     ORDER BY group_level ASC, group_name ASC, id DESC"
+     ORDER BY training_days_count ASC"
 );
-$groupsStmt->execute([$currentGameId]);
+$availableDaysCountsStmt->execute([$currentGameId]);
+$availableDaysCounts = array_map("intval", $availableDaysCountsStmt->fetchAll(PDO::FETCH_COLUMN));
+if ($filterDaysCount !== null && !in_array($filterDaysCount, $availableDaysCounts, true)) {
+    $filterDaysCount = null;
+}
+
+$availableTimesStmt = $pdo->prepare(
+    "SELECT DISTINCT training_time
+     FROM sports_groups
+     WHERE game_id = ?
+       AND training_time IS NOT NULL
+       AND training_time <> ''
+     ORDER BY training_time ASC"
+);
+$availableTimesStmt->execute([$currentGameId]);
+$availableTimes = array_values(array_filter($availableTimesStmt->fetchAll(PDO::FETCH_COLUMN), function ($value) {
+    return $value !== null && $value !== "";
+}));
+if ($filterTime !== "" && !in_array($filterTime, $availableTimes, true)) {
+    $filterTime = "";
+}
+
+$availableTrainersStmt = $pdo->prepare(
+    "SELECT DISTINCT trainer_name
+     FROM sports_groups
+     WHERE game_id = ?
+       AND trainer_name <> ''
+     ORDER BY trainer_name ASC"
+);
+$availableTrainersStmt->execute([$currentGameId]);
+$availableTrainers = $availableTrainersStmt->fetchAll(PDO::FETCH_COLUMN);
+if ($filterTrainer !== "" && !in_array($filterTrainer, $availableTrainers, true)) {
+    $filterTrainer = "";
+}
+
+$groupPlayerCounts = fetchGroupPlayerCounts($pdo, $currentGameId);
+$groupsSql = "SELECT id, group_name, group_level, training_days_count, training_day_keys, training_time, training_day_times, trainings_count, exercises_count, max_players, trainer_name,
+                     assistant_trainer_name, ballet_trainer_name, academy_percentage, walkers_price, other_weapons_price, civilian_price, created_at, updated_at, created_by_user_id, updated_by_user_id
+              FROM sports_groups
+              WHERE game_id = ?";
+$groupsParams = [$currentGameId];
+
+if ($groupSearch !== "") {
+    $groupsSql .= " AND group_name LIKE ? ESCAPE '\\\\'";
+    $groupsParams[] = "%" . escapeSqlLikePattern($groupSearch) . "%";
+}
+if ($filterLevel !== "") {
+    $groupsSql .= " AND group_level = ?";
+    $groupsParams[] = $filterLevel;
+}
+if ($filterDaysCount !== null) {
+    $groupsSql .= " AND training_days_count = ?";
+    $groupsParams[] = $filterDaysCount;
+}
+if ($filterTime !== "") {
+    $groupsSql .= " AND training_time = ?";
+    $groupsParams[] = $filterTime;
+}
+if ($filterTrainer !== "") {
+    $groupsSql .= " AND trainer_name = ?";
+    $groupsParams[] = $filterTrainer;
+}
+
+$groupsSql .= " ORDER BY group_level ASC, group_name ASC, id DESC";
+$groupsStmt = $pdo->prepare($groupsSql);
+$groupsStmt->execute($groupsParams);
 $groups = $groupsStmt->fetchAll();
+
+if (count($filterDays) > 0) {
+    $groups = array_values(array_filter($groups, function (array $group) use ($filterDays) {
+        $groupDayKeys = getPlayerTrainingDayKeys($group["training_day_keys"] ?? "");
+        foreach ($filterDays as $dayKey) {
+            if (!in_array($dayKey, $groupDayKeys, true)) {
+                return false;
+            }
+        }
+
+        return true;
+    }));
+}
+
 foreach ($groups as &$group) {
     $group["current_players_count"] = $groupPlayerCounts[(int)$group["id"]] ?? 0;
+    $group["can_add_players"] = playerGroupHasAvailableSlot($group);
     $group["training_day_labels"] = formatPlayerTrainingDaysLabel(getPlayerTrainingDayKeys($group["training_day_keys"] ?? ""));
     $group["training_schedule_labels"] = formatGroupTrainingScheduleLabels(
         getPlayerTrainingDayKeys($group["training_day_keys"] ?? ""),
@@ -961,6 +1078,24 @@ foreach ($groups as &$group) {
     $group["training_time_label"] = formatTrainingTimeDisplay($group["training_time"] ?? "");
 }
 unset($group);
+
+if ($filterGroupStatus !== "") {
+    $groups = array_values(array_filter($groups, function (array $group) use ($filterGroupStatus) {
+        if ($filterGroupStatus === "complete") {
+            return !$group["can_add_players"];
+        }
+
+        return $group["can_add_players"];
+    }));
+}
+
+$hasActiveGroupFilters = $groupSearch !== ""
+    || $filterLevel !== ""
+    || $filterDaysCount !== null
+    || count($filterDays) > 0
+    || $filterTime !== ""
+    || $filterTrainer !== ""
+    || $filterGroupStatus !== "";
 
 $trainerSelectAriaLabel = $hasTrainerOptions ? "المدرب" : "لا يوجد مدرب متاح";
 $submitButtonLabel = $formData["id"] > 0 ? "تحديث المجموعة" : "حفظ المجموعة";
@@ -978,6 +1113,57 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/css/style.css">
     <style>
+        .filter-bar {
+            background: var(--card-bg);
+            border-radius: 24px;
+            padding: 20px;
+            margin-bottom: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .filter-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: flex-end;
+        }
+        .filter-group {
+            flex: 1;
+            min-width: 160px;
+        }
+        .filter-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            color: var(--text-muted);
+        }
+        .filter-group select, .filter-group input {
+            width: 100%;
+            padding: 10px 12px;
+            border-radius: 14px;
+            border: 1.5px solid var(--border-color);
+            background: var(--bg-secondary);
+            font-family: inherit;
+        }
+        .days-checkboxes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 8px;
+        }
+        .days-checkboxes label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: normal;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        .filter-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
         .group-training-time-input {
             min-height: 52px;
             font-size: 1rem;
@@ -988,6 +1174,10 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
             color: #b45309;
             font-size: 0.9rem;
             font-weight: 700;
+        }
+        @media (max-width: 768px) {
+            .filter-form { flex-direction: column; align-items: stretch; }
+            .filter-actions { flex-direction: row; justify-content: space-between; }
         }
     </style>
 </head>
@@ -1024,6 +1214,95 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
             <div class="alert-error"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
         <?php endif; ?>
 
+        <div class="filter-bar">
+            <form method="GET" class="filter-form">
+                <div class="filter-group">
+                    <label for="group_search">اسم المجموعة</label>
+                    <input
+                        type="text"
+                        name="group_search"
+                        id="group_search"
+                        value="<?php echo htmlspecialchars($groupSearch, ENT_QUOTES, 'UTF-8'); ?>"
+                        placeholder="ابحث باسم المجموعة"
+                    >
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter_level">مستوى المجموعة</label>
+                    <select name="filter_level" id="filter_level">
+                        <option value="">الكل</option>
+                        <?php foreach ($availableLevels as $level): ?>
+                            <option value="<?php echo htmlspecialchars((string)$level, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $filterLevel === (string)$level ? "selected" : ""; ?>>
+                                <?php echo htmlspecialchars((string)$level, ENT_QUOTES, 'UTF-8'); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter_days_count">عدد أيام التمرين أسبوعياً</label>
+                    <select name="filter_days_count" id="filter_days_count">
+                        <option value="">الكل</option>
+                        <?php foreach ($availableDaysCounts as $daysCount): ?>
+                            <option value="<?php echo (int)$daysCount; ?>" <?php echo $filterDaysCount !== null && $filterDaysCount === (int)$daysCount ? "selected" : ""; ?>>
+                                <?php echo (int)$daysCount; ?> أيام
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter_time">ميعاد التمرين</label>
+                    <select name="filter_time" id="filter_time">
+                        <option value="">الكل</option>
+                        <?php foreach ($availableTimes as $timeValue): ?>
+                            <option value="<?php echo htmlspecialchars((string)$timeValue, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $filterTime === (string)$timeValue ? "selected" : ""; ?>>
+                                <?php echo htmlspecialchars(formatTrainingTimeDisplay((string)$timeValue), ENT_QUOTES, 'UTF-8'); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter_trainer">المدرب</label>
+                    <select name="filter_trainer" id="filter_trainer">
+                        <option value="">الكل</option>
+                        <?php foreach ($availableTrainers as $trainerName): ?>
+                            <option value="<?php echo htmlspecialchars((string)$trainerName, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $filterTrainer === (string)$trainerName ? "selected" : ""; ?>>
+                                <?php echo htmlspecialchars((string)$trainerName, ENT_QUOTES, 'UTF-8'); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="filter_group_status">حالة المجموعة</label>
+                    <select name="filter_group_status" id="filter_group_status">
+                        <option value="">الكل</option>
+                        <option value="complete" <?php echo $filterGroupStatus === "complete" ? "selected" : ""; ?>>مكتملة</option>
+                        <option value="incomplete" <?php echo $filterGroupStatus === "incomplete" ? "selected" : ""; ?>>غير مكتملة</option>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label>أيام محددة (اختر الأيام التي تريد أن تتضمنها المجموعة)</label>
+                    <div class="days-checkboxes">
+                        <?php foreach (PLAYER_DAY_OPTIONS as $dayKey => $dayLabel): ?>
+                            <label>
+                                <input type="checkbox" name="filter_days[]" value="<?php echo htmlspecialchars($dayKey, ENT_QUOTES, 'UTF-8'); ?>" <?php echo in_array($dayKey, $filterDays, true) ? "checked" : ""; ?>>
+                                <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, 'UTF-8'); ?>
+                            </label>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-primary">تصفية</button>
+                    <a href="<?php echo GROUPS_PAGE_HREF; ?>" class="btn btn-soft">إلغاء الفلاتر</a>
+                </div>
+            </form>
+        </div>
+
         <section class="groups-grid">
             <div class="card groups-form-card">
                 <div class="card-head">
@@ -1031,7 +1310,7 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
                         <h3><?php echo $formData["id"] > 0 ? "تعديل المجموعة" : "إضافة مجموعة"; ?></h3>
                     </div>
                     <?php if ($formData["id"] > 0): ?>
-                        <a href="groups.php" class="btn btn-soft" aria-label="إلغاء التعديل">إلغاء</a>
+                        <a href="<?php echo GROUPS_PAGE_HREF; ?>" class="btn btn-soft" aria-label="إلغاء التعديل">إلغاء</a>
                     <?php endif; ?>
                 </div>
 
@@ -1200,7 +1479,7 @@ $submitButtonAriaLabel = $hasTrainerOptions ? $submitButtonLabel : "لا يمك�
                         <tbody>
                             <?php if (count($groups) === 0): ?>
                                 <tr>
-                                    <td colspan="12" class="empty-cell">لا توجد مجموعات مسجلة.</td>
+                                    <td colspan="12" class="empty-cell"><?php echo $hasActiveGroupFilters ? "لا توجد مجموعات متاحة تطابق الفلاتر المختارة." : "لا توجد مجموعات مسجلة."; ?></td>
                                 </tr>
                             <?php else: ?>
                                 <?php foreach ($groups as $group): ?>
