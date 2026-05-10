@@ -142,7 +142,7 @@ try {
 $notificationRows = [];
 try {
     $notifStmt = $pdo->prepare(
-        "SELECT id, title, message, notification_type, priority_level, display_date
+        "SELECT id, title, message, notification_type, priority_level, display_date, created_at
          FROM admin_notifications
          WHERE game_id = ? AND visibility_status = 'visible'
          ORDER BY display_date DESC, id DESC
@@ -566,12 +566,25 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
     color: var(--text-soft);
     font-weight: 600;
 }
+.notif-date-block {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: flex-start;
+}
+.notif-date-label {
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: var(--text-soft);
+}
 .notif-message {
     font-size: 0.88rem;
     font-weight: 600;
     color: var(--text);
     line-height: 1.6;
     white-space: pre-line;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 .portal-topbar-theme {
     display: flex;
@@ -614,6 +627,20 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
     }
     .portal-section-card {
         padding: 16px;
+    }
+    .portal-tabs {
+        gap: 6px;
+    }
+    .portal-tab-btn {
+        flex: 1 1 calc(50% - 6px);
+        justify-content: center;
+        white-space: normal;
+    }
+    .notif-meta {
+        width: 100%;
+    }
+    .notif-date-block {
+        width: 100%;
     }
 }
 </style>
@@ -925,7 +952,11 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
                                 <div class="notif-meta">
                                     <span class="<?php echo htmlspecialchars($pClass, ENT_QUOTES, "UTF-8"); ?>"><?php echo htmlspecialchars($pLabel, ENT_QUOTES, "UTF-8"); ?></span>
                                     <span class="notif-type"><?php echo htmlspecialchars($tLabel, ENT_QUOTES, "UTF-8"); ?></span>
-                                    <span class="notif-date"><?php echo htmlspecialchars(adminPortalFormatDate($nr["display_date"]), ENT_QUOTES, "UTF-8"); ?></span>
+                                    <span class="notif-date-block">
+                                        <span class="notif-date-label">تاريخ الإشعار</span>
+                                        <span class="notif-date"><?php echo htmlspecialchars(adminPortalFormatDate($nr["display_date"]), ENT_QUOTES, "UTF-8"); ?></span>
+                                        <span class="notif-date"><?php echo htmlspecialchars(adminPortalFormatDatetime((string)($nr["created_at"] ?? "")), ENT_QUOTES, "UTF-8"); ?></span>
+                                    </span>
                                 </div>
                             </div>
                             <div class="notif-message"><?php echo htmlspecialchars($nr["message"], ENT_QUOTES, "UTF-8"); ?></div>

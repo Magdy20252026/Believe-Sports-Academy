@@ -2239,6 +2239,8 @@ body.dark-mode .collection-breakdown-panel {
     white-space: pre-line;
     line-height: 1.9;
     font-weight: 700;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .notification-type-badge {
@@ -2287,6 +2289,11 @@ body.dark-mode .player-notification-target-meta {
 @media (max-width: 768px) {
     .player-notification-target-cell {
         min-width: 0;
+    }
+
+    .notification-message-cell {
+        min-width: 0;
+        max-width: 100%;
     }
 }
 
@@ -3390,6 +3397,25 @@ body.dark-mode .players-page .form-group select {
 
     .player-modal-card {
         max-height: calc(100vh - 24px);
+    }
+
+    .card,
+    .topbar,
+    .main-content > section,
+    .main-content > div,
+    .table-wrap,
+    .attendance-layout-grid,
+    .players-attendance-grid {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .data-table td,
+    .data-table td::before,
+    .card p,
+    .card li {
+        overflow-wrap: anywhere;
+        word-break: break-word;
     }
 }
 

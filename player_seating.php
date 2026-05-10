@@ -390,13 +390,43 @@ foreach ($groupPlayersStmt->fetchAll() as $playerRow) {
             gap: 10px;
             align-items: center;
         }
+        .group-player-name {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+        }
+        .group-level-inline-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 32px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: linear-gradient(135deg, rgba(47, 91, 234, 0.12), rgba(124, 58, 237, 0.12));
+            color: var(--text);
+            font-size: 13px;
+            font-weight: 800;
+        }
         @media (max-width: 768px) {
             .filter-form { flex-direction: column; align-items: stretch; }
             .filter-actions { flex-direction: row; justify-content: space-between; }
+            .group-player-name {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .seating-level-form {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .seating-level-input,
+            .seating-level-form .btn {
+                width: 100%;
+            }
         }
     </style>
 </head>
-<body class="dashboard-page">
+<body class="dashboard-page players-page player-seating-page">
 <div class="dashboard-layout">
     <?php require "sidebar_menu.php"; ?>
 
@@ -571,7 +601,12 @@ foreach ($groupPlayersStmt->fetchAll() as $playerRow) {
                                                     <?php else: ?>
                                                         <?php foreach ($groupPlayers as $player): ?>
                                                             <tr>
-                                                                <td data-label="اسم اللاعب"><?php echo htmlspecialchars((string)$player["name"], ENT_QUOTES, 'UTF-8'); ?></td>
+                                                                <td data-label="اسم اللاعب">
+                                                                    <div class="group-player-name">
+                                                                        <strong><?php echo htmlspecialchars((string)$player["name"], ENT_QUOTES, 'UTF-8'); ?></strong>
+                                                                        <span class="group-level-inline-badge">مستوى المجموعة: <?php echo htmlspecialchars((string)$group["group_level"], ENT_QUOTES, 'UTF-8'); ?></span>
+                                                                    </div>
+                                                                </td>
                                                                 <td data-label="مستوى اللاعب">
                                                                     <form method="POST" class="inline-form seating-level-form">
                                                                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION["player_seating_csrf_token"], ENT_QUOTES, "UTF-8"); ?>">
