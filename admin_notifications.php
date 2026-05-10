@@ -431,35 +431,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 }
             }
         }
-
-        if ($action === "delete") {
-            $notificationId = (int)($_POST["notification_id"] ?? 0);
-            if ($notificationId <= 0) {
-                $error = "الإشعار غير صالح.";
-            } else {
-                $notificationToDelete = fetchAdminNotificationRecord($pdo, $notificationId, $currentGameId);
-                $deleteStmt = $pdo->prepare("DELETE FROM admin_notifications WHERE id = ? AND game_id = ?");
-
-                try {
-                    $deleteStmt->execute([$notificationId, $currentGameId]);
-                    if ($deleteStmt->rowCount() === 0) {
-                        $error = "الإشعار غير متاح.";
-                    } else {
-                        auditLogActivity($pdo, "delete", "admin_notifications", $notificationId, "إشعارات الإداريين", "حذف إشعار: " . (string)($notificationToDelete["title"] ?? ""));
-                        $_SESSION["admin_notifications_success"] = "تم حذف الإشعار.";
-                        header("Location: " . buildAdminNotificationsPageUrl([
-                            "search" => $redirectSearch,
-                            "status_filter" => $redirectStatusFilter,
-                            "type_filter" => $redirectTypeFilter,
-                        ]));
-                        exit;
-                    }
-                } catch (Throwable $throwable) {
-                    logAdminNotificationException($throwable);
-                    $error = "تعذر حذف الإشعار.";
-                }
-            }
-        }
     }
 }
 
@@ -687,7 +658,7 @@ $cancelUrl = buildAdminNotificationsPageUrl([
                                 <th>وقت التسجيل</th>
                                 <th>أضيف بواسطة</th>
                                 <th>آخر تعديل بواسطة</th>
-                                <th>الإجراءات</th>
+                                <th>الإجراء</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -726,18 +697,9 @@ $cancelUrl = buildAdminNotificationsPageUrl([
                                         <td data-label="وقت التسجيل"><?php echo htmlspecialchars(formatAdminNotificationDateTimeValue($record["created_at"] ?? ""), ENT_QUOTES, "UTF-8"); ?></td>
                                         <td data-label="أضيف بواسطة"><?php echo htmlspecialchars((string)($record["created_by_name"] ?? ADMIN_NOTIFICATION_EMPTY_VALUE), ENT_QUOTES, "UTF-8"); ?></td>
                                         <td data-label="آخر تعديل بواسطة"><?php echo htmlspecialchars((string)($record["updated_by_name"] ?? ADMIN_NOTIFICATION_EMPTY_VALUE), ENT_QUOTES, "UTF-8"); ?></td>
-                                        <td data-label="الإجراءات">
+                                        <td data-label="الإجراء">
                                             <div class="inline-actions">
                                                 <a href="<?php echo htmlspecialchars($editUrl, ENT_QUOTES, "UTF-8"); ?>" class="btn btn-warning">تعديل</a>
-                                                <form method="POST" class="inline-form">
-                                                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($_SESSION["admin_notifications_csrf_token"], ENT_QUOTES, "UTF-8"); ?>">
-                                                    <input type="hidden" name="action" value="delete">
-                                                    <input type="hidden" name="notification_id" value="<?php echo (int)$record["id"]; ?>">
-                                                    <input type="hidden" name="redirect_search" value="<?php echo htmlspecialchars($searchQuery, ENT_QUOTES, "UTF-8"); ?>">
-                                                    <input type="hidden" name="redirect_status_filter" value="<?php echo htmlspecialchars($statusFilter, ENT_QUOTES, "UTF-8"); ?>">
-                                                    <input type="hidden" name="redirect_type_filter" value="<?php echo htmlspecialchars($typeFilter, ENT_QUOTES, "UTF-8"); ?>">
-                                                    <button type="submit" class="btn btn-danger" onclick="return confirm('هل تريد حذف هذا الإشعار؟')">حذف</button>
-                                                </form>
                                             </div>
                                         </td>
                                     </tr>

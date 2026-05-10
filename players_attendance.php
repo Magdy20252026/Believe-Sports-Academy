@@ -446,6 +446,77 @@ function normalizeAttendanceHourFilterValue($value)
     return "";
 }
 
+function normalizePlayerAttendanceDayFilters($dayFilters)
+{
+    if (!is_array($dayFilters)) {
+        return [];
+    }
+
+    $sanitized = [];
+    foreach ($dayFilters as $dayKey) {
+        $dayKey = trim((string)$dayKey);
+        if ($dayKey !== "" && isset(PLAYER_DAY_OPTIONS[$dayKey])) {
+            $sanitized[] = $dayKey;
+        }
+    }
+
+    return array_values(array_unique($sanitized));
+}
+
+function normalizePlayerAttendanceGroupStatusFilter($value)
+{
+    $value = trim((string)$value);
+    return in_array($value, ["complete", "incomplete"], true) ? $value : "";
+}
+
+function matchesPlayerAttendanceGroupFilters(array $record, array $filters, array $groupStatusMap = [])
+{
+    $groupLevel = trim((string)($record["group_level"] ?? ""));
+    $trainingDaysCount = (int)($record["training_days_per_week"] ?? 0);
+    $trainingTime = normalizeAttendanceHourFilterValue($record["training_time"] ?? "");
+    $trainerName = trim((string)($record["trainer_name"] ?? ""));
+    $trainingDayKeys = getPlayerTrainingDayKeys($record["training_day_keys"] ?? "");
+    $groupId = (int)($record["group_id"] ?? 0);
+
+    if (($filters["level"] ?? "") !== "" && $groupLevel !== (string)$filters["level"]) {
+        return false;
+    }
+
+    if (($filters["days_count"] ?? null) !== null && $trainingDaysCount !== (int)$filters["days_count"]) {
+        return false;
+    }
+
+    if (($filters["time"] ?? "") !== "" && $trainingTime !== (string)$filters["time"]) {
+        return false;
+    }
+
+    if (($filters["trainer"] ?? "") !== "" && $trainerName !== (string)$filters["trainer"]) {
+        return false;
+    }
+
+    foreach (($filters["days"] ?? []) as $dayKey) {
+        if (!in_array($dayKey, $trainingDayKeys, true)) {
+            return false;
+        }
+    }
+
+    $groupStatusFilter = (string)($filters["group_status"] ?? "");
+    if ($groupStatusFilter !== "") {
+        if ($groupId <= 0) {
+            return false;
+        }
+        $groupCanAddPlayers = (bool)($groupStatusMap[$groupId] ?? false);
+        if ($groupStatusFilter === "complete" && $groupCanAddPlayers) {
+            return false;
+        }
+        if ($groupStatusFilter === "incomplete" && !$groupCanAddPlayers) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 function fetchPlayerAttendanceRecords(PDO $pdo, $gameId, $dateFrom, $dateTo, $groupId, $statusFilter, $searchTerm, $timeFrom = "", $timeTo = "")
 {
     $presentStatus = PLAYER_ATTENDANCE_STATUS_PRESENT;
@@ -468,6 +539,7 @@ function fetchPlayerAttendanceRecords(PDO $pdo, $gameId, $dateFrom, $dateTo, $gr
                 p.total_training_days,
                 p.total_trainings,
                 p.trainer_name,
+                p.training_time,
                 p.subscription_price,
                 p.paid_amount,
                 p.training_day_keys,
@@ -560,6 +632,7 @@ function fetchSingleTrainingAttendanceLogRecords(PDO $pdo, $gameId, $dateFrom, $
                 COALESCE(p.total_training_days, 0) AS total_training_days,
                 COALESCE(p.total_trainings, 0) AS total_trainings,
                 COALESCE(p.trainer_name, '') AS trainer_name,
+                COALESCE(p.training_time, '') AS training_time,
                 COALESCE(sta.training_price, 0) AS subscription_price,
                 sta.paid_amount,
                 COALESCE(p.training_day_keys, '') AS training_day_keys,
@@ -1099,13 +1172,54 @@ $today = new DateTimeImmutable("today", new DateTimeZone("Africa/Cairo"));
 $egyptDateTimeLabel = formatPlayerAttendanceDateTimeLabel($now);
 
 $groupsStmt = $pdo->prepare(
-    "SELECT id, group_name, group_level
+    "SELECT id, group_name, group_level, max_players, trainer_name, training_days_count, training_day_keys, training_time
      FROM sports_groups
      WHERE game_id = ?
      ORDER BY group_level ASC, group_name ASC, id ASC"
 );
 $groupsStmt->execute([$currentGameId]);
 $groups = $groupsStmt->fetchAll();
+$groupPlayerCounts = fetchGroupPlayerCounts($pdo, $currentGameId);
+$availableLevels = [];
+$availableDaysCounts = [];
+$availableTimes = [];
+$availableTrainers = [];
+$groupStatusMap = [];
+foreach ($groups as &$group) {
+    $groupId = (int)($group["id"] ?? 0);
+    $group["current_players_count"] = $groupPlayerCounts[$groupId] ?? 0;
+    $group["can_add_players"] = playerGroupHasAvailableSlot($group);
+    $groupStatusMap[$groupId] = (bool)$group["can_add_players"];
+
+    $groupLevel = trim((string)($group["group_level"] ?? ""));
+    if ($groupLevel !== "") {
+        $availableLevels[$groupLevel] = $groupLevel;
+    }
+
+    $daysCount = (int)($group["training_days_count"] ?? 0);
+    if ($daysCount > 0) {
+        $availableDaysCounts[$daysCount] = $daysCount;
+    }
+
+    $trainingTime = normalizeAttendanceHourFilterValue($group["training_time"] ?? "");
+    if ($trainingTime !== "") {
+        $availableTimes[$trainingTime] = $trainingTime;
+    }
+
+    $trainerName = trim((string)($group["trainer_name"] ?? ""));
+    if ($trainerName !== "") {
+        $availableTrainers[$trainerName] = $trainerName;
+    }
+}
+unset($group);
+ksort($availableLevels, SORT_NATURAL);
+ksort($availableDaysCounts, SORT_NUMERIC);
+ksort($availableTimes, SORT_NATURAL);
+ksort($availableTrainers, SORT_NATURAL);
+$availableLevels = array_values($availableLevels);
+$availableDaysCounts = array_values($availableDaysCounts);
+$availableTimes = array_values($availableTimes);
+$availableTrainers = array_values($availableTrainers);
 $singleTrainingDefinitions = fetchSingleTrainingDefinitions($pdo, $currentGameId);
 $singleTrainingAttendanceFormData = [
     "player_name" => "",
@@ -1307,13 +1421,35 @@ if (function_exists("mb_substr")) {
 } else {
     $searchTerm = substr($searchTerm, 0, 100);
 }
+$filterLevel = trim((string)($_GET["filter_level"] ?? ""));
+$filterDaysCount = isset($_GET["filter_days_count"]) && $_GET["filter_days_count"] !== "" ? (int)$_GET["filter_days_count"] : null;
+$filterDays = normalizePlayerAttendanceDayFilters($_GET["filter_days"] ?? []);
+$filterTime = normalizeAttendanceHourFilterValue($_GET["filter_time"] ?? "");
+$filterTrainer = trim((string)($_GET["filter_trainer"] ?? ""));
+$filterGroupStatus = normalizePlayerAttendanceGroupStatusFilter($_GET["filter_group_status"] ?? "");
+$attendanceGroupFilters = [
+    "level" => $filterLevel,
+    "days_count" => $filterDaysCount,
+    "days" => $filterDays,
+    "time" => $filterTime,
+    "trainer" => $filterTrainer,
+    "group_status" => $filterGroupStatus,
+];
 
 $records = [];
 foreach (fetchPlayerAttendanceRecords($pdo, $currentGameId, $dateFrom, $dateTo, $selectedGroupId, $statusFilter, $searchTerm, $timeFrom, $timeTo) as $recordRow) {
-    $records[] = attachPlayerAttendanceSortTimestamp(buildPlayerAttendanceSnapshot($recordRow, $today));
+    $record = buildPlayerAttendanceSnapshot($recordRow, $today);
+    if (!matchesPlayerAttendanceGroupFilters($record, $attendanceGroupFilters, $groupStatusMap)) {
+        continue;
+    }
+    $records[] = attachPlayerAttendanceSortTimestamp($record);
 }
 foreach (fetchSingleTrainingAttendanceLogRecords($pdo, $currentGameId, $dateFrom, $dateTo, $selectedGroupId, $statusFilter, $searchTerm, $timeFrom, $timeTo) as $recordRow) {
-    $records[] = attachPlayerAttendanceSortTimestamp(buildPlayerAttendanceSnapshot($recordRow, $today));
+    $record = buildPlayerAttendanceSnapshot($recordRow, $today);
+    if (!matchesPlayerAttendanceGroupFilters($record, $attendanceGroupFilters, $groupStatusMap)) {
+        continue;
+    }
+    $records[] = attachPlayerAttendanceSortTimestamp($record);
 }
 usort($records, function (array $firstRecord, array $secondRecord) {
     $firstTimestamp = (int)($firstRecord["_sort_timestamp"] ?? 0);
@@ -1327,10 +1463,16 @@ usort($records, function (array $firstRecord, array $secondRecord) {
 
 $todaySummary = fetchTodayPlayerAttendanceSummary($pdo, $currentGameId, $today, $playersById);
 
+$absencePlayersById = [];
+foreach ($playersById as $playerId => $player) {
+    if (matchesPlayerAttendanceGroupFilters($player, $attendanceGroupFilters, $groupStatusMap)) {
+        $absencePlayersById[$playerId] = $player;
+    }
+}
 $absencesInRange = computePlayerImpliedAbsencesInRange(
     $pdo,
     $currentGameId,
-    $playersById,
+    $absencePlayersById,
     $dateFrom,
     $dateTo,
     $today,
@@ -1360,6 +1502,12 @@ $exportQuery = http_build_query([
     "time_from" => $timeFrom === "" ? "" : substr($timeFrom, 0, 5),
     "time_to" => $timeTo === "" ? "" : substr($timeTo, 0, 5),
     "search" => $searchTerm,
+    "filter_level" => $filterLevel,
+    "filter_days_count" => $filterDaysCount,
+    "filter_days" => $filterDays,
+    "filter_time" => $filterTime === "" ? "" : substr($filterTime, 0, 5),
+    "filter_trainer" => $filterTrainer,
+    "filter_group_status" => $filterGroupStatus,
     "export" => "xlsx",
 ]);
 $selectedSingleTrainingId = $singleTrainingAttendanceFormData["single_training_id"] === ""
@@ -1512,6 +1660,28 @@ $selectedSingleTrainingPriceLabel = $selectedSingleTraining ? formatPlayerCurren
             text-align: center;
             color: var(--text-soft, #6b7280);
         }
+        .players-attendance-days-filter {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .players-attendance-days-filter label {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        @media (max-width: 768px) {
+            .players-attendance-days-filter {
+                gap: 10px;
+            }
+            .players-attendance-days-filter label {
+                width: calc(50% - 5px);
+            }
+        }
     </style>
 </head>
 <body class="dashboard-page players-page">
@@ -1659,6 +1829,58 @@ $selectedSingleTrainingPriceLabel = $selectedSingleTraining ? formatPlayerCurren
                                 </select>
                             </div>
                             <div class="form-group">
+                                <label for="filterLevel">📊 مستوى المجموعة</label>
+                                <select name="filter_level" id="filterLevel">
+                                    <option value="">الكل</option>
+                                    <?php foreach ($availableLevels as $level): ?>
+                                        <option value="<?php echo htmlspecialchars($level, ENT_QUOTES, "UTF-8"); ?>" <?php echo $filterLevel === $level ? "selected" : ""; ?>>
+                                            <?php echo htmlspecialchars($level, ENT_QUOTES, "UTF-8"); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="filterDaysCount">📅 عدد أيام التمرين أسبوعياً</label>
+                                <select name="filter_days_count" id="filterDaysCount">
+                                    <option value="">الكل</option>
+                                    <?php foreach ($availableDaysCounts as $daysCount): ?>
+                                        <option value="<?php echo (int)$daysCount; ?>" <?php echo ($filterDaysCount !== null && $filterDaysCount === (int)$daysCount) ? "selected" : ""; ?>>
+                                            <?php echo (int)$daysCount; ?> أيام
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="filterTrainingTime">⏰ ميعاد التمرين</label>
+                                <select name="filter_time" id="filterTrainingTime">
+                                    <option value="">الكل</option>
+                                    <?php foreach ($availableTimes as $trainingTimeOption): ?>
+                                        <option value="<?php echo htmlspecialchars(substr($trainingTimeOption, 0, 5), ENT_QUOTES, "UTF-8"); ?>" <?php echo $filterTime === $trainingTimeOption ? "selected" : ""; ?>>
+                                            <?php echo htmlspecialchars(formatTrainingTimeDisplay($trainingTimeOption), ENT_QUOTES, "UTF-8"); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="filterTrainer">🧑‍🏫 المدرب</label>
+                                <select name="filter_trainer" id="filterTrainer">
+                                    <option value="">الكل</option>
+                                    <?php foreach ($availableTrainers as $trainerName): ?>
+                                        <option value="<?php echo htmlspecialchars($trainerName, ENT_QUOTES, "UTF-8"); ?>" <?php echo $filterTrainer === $trainerName ? "selected" : ""; ?>>
+                                            <?php echo htmlspecialchars($trainerName, ENT_QUOTES, "UTF-8"); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="filterGroupStatus">📌 حالة المجموعة</label>
+                                <select name="filter_group_status" id="filterGroupStatus">
+                                    <option value="">الكل</option>
+                                    <option value="complete" <?php echo $filterGroupStatus === "complete" ? "selected" : ""; ?>>مكتملة</option>
+                                    <option value="incomplete" <?php echo $filterGroupStatus === "incomplete" ? "selected" : ""; ?>>غير مكتملة</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
                                 <label for="timeFrom">من الساعة</label>
                                 <input type="time" name="time_from" id="timeFrom" value="<?php echo htmlspecialchars($timeFrom === "" ? "" : substr($timeFrom, 0, 5), ENT_QUOTES, "UTF-8"); ?>">
                             </div>
@@ -1669,6 +1891,17 @@ $selectedSingleTrainingPriceLabel = $selectedSingleTraining ? formatPlayerCurren
                             <div class="form-group">
                                 <label for="searchAttendance">بحث</label>
                                 <input type="search" name="search" id="searchAttendance" value="<?php echo htmlspecialchars($searchTerm, ENT_QUOTES, "UTF-8"); ?>" placeholder="الاسم أو الباركود أو الهاتف">
+                            </div>
+                            <div class="form-group form-group-full">
+                                <label>🗓️ أيام محددة</label>
+                                <div class="players-attendance-days-filter">
+                                    <?php foreach (PLAYER_DAY_OPTIONS as $dayKey => $dayLabel): ?>
+                                        <label>
+                                            <input type="checkbox" name="filter_days[]" value="<?php echo htmlspecialchars($dayKey, ENT_QUOTES, "UTF-8"); ?>" <?php echo in_array($dayKey, $filterDays, true) ? "checked" : ""; ?>>
+                                            <?php echo htmlspecialchars($dayLabel, ENT_QUOTES, "UTF-8"); ?>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
                             </div>
                         </div>
                         <div class="attendance-filter-actions">
