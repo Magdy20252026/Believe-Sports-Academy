@@ -505,7 +505,7 @@ function matchesPlayerAttendanceGroupFilters(array $record, array $filters, arra
         if ($groupId <= 0) {
             return false;
         }
-        $groupCanAddPlayers = $groupId > 0 ? (bool)($groupStatusMap[$groupId] ?? false) : false;
+        $groupCanAddPlayers = (bool)($groupStatusMap[$groupId] ?? false);
         if ($groupStatusFilter === "complete" && $groupCanAddPlayers) {
             return false;
         }

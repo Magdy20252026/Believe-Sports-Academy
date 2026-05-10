@@ -953,8 +953,9 @@ $attendanceLate = (int)$attendanceSummary["late_days"];
                                     <span class="<?php echo htmlspecialchars($pClass, ENT_QUOTES, "UTF-8"); ?>"><?php echo htmlspecialchars($pLabel, ENT_QUOTES, "UTF-8"); ?></span>
                                     <span class="notif-type"><?php echo htmlspecialchars($tLabel, ENT_QUOTES, "UTF-8"); ?></span>
                                     <span class="notif-date-block">
-                                        <span class="notif-date-label">تاريخ الإشعار</span>
+                                        <span class="notif-date-label">تاريخ الظهور</span>
                                         <span class="notif-date"><?php echo htmlspecialchars(adminPortalFormatDate($nr["display_date"]), ENT_QUOTES, "UTF-8"); ?></span>
+                                        <span class="notif-date-label">تاريخ التسجيل</span>
                                         <span class="notif-date"><?php echo htmlspecialchars(adminPortalFormatDatetime((string)($nr["created_at"] ?? "")), ENT_QUOTES, "UTF-8"); ?></span>
                                     </span>
                                 </div>
