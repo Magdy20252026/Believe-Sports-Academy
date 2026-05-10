@@ -431,10 +431,6 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 }
             }
         }
-
-        if ($action === "delete") {
-            $error = "حذف الإشعارات غير متاح للحفاظ على السجل.";
-        }
     }
 }
 
