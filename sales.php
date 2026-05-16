@@ -15,6 +15,7 @@ function ensureStoreCategoriesTable(PDO $pdo)
             game_id INT(11) NOT NULL,
             category_name VARCHAR(150) NOT NULL,
             pricing_type VARCHAR(30) NOT NULL DEFAULT 'price_only',
+            variant_type VARCHAR(30) NOT NULL DEFAULT 'none',
             has_sizes TINYINT(1) NOT NULL DEFAULT 0,
             quantity INT(11) NULL DEFAULT NULL,
             price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -28,6 +29,7 @@ function ensureStoreCategoriesTable(PDO $pdo)
 
     $requiredColumns = [
         "pricing_type" => "ALTER TABLE store_categories ADD COLUMN pricing_type VARCHAR(30) NOT NULL DEFAULT 'price_only' AFTER category_name",
+        "variant_type" => "ALTER TABLE store_categories ADD COLUMN variant_type VARCHAR(30) NOT NULL DEFAULT 'none' AFTER pricing_type",
         "has_sizes" => "ALTER TABLE store_categories ADD COLUMN has_sizes TINYINT(1) NOT NULL DEFAULT 0 AFTER pricing_type",
         "quantity" => "ALTER TABLE store_categories ADD COLUMN quantity INT(11) NULL DEFAULT NULL AFTER has_sizes",
         "price" => "ALTER TABLE store_categories ADD COLUMN price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER quantity",
@@ -59,17 +61,19 @@ function ensureStoreCategoriesTable(PDO $pdo)
             id INT(11) NOT NULL AUTO_INCREMENT,
             category_id INT(11) NOT NULL,
             size_name VARCHAR(100) NOT NULL,
+            color_name VARCHAR(100) NOT NULL DEFAULT '',
             quantity INT(11) NOT NULL DEFAULT 0,
             created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            UNIQUE KEY unique_store_category_size_name (category_id, size_name),
+            UNIQUE KEY unique_store_category_variant_name (category_id, size_name, color_name),
             KEY idx_store_category_sizes_category (category_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
     );
 
     $sizeRequiredColumns = [
         "size_name" => "ALTER TABLE store_category_sizes ADD COLUMN size_name VARCHAR(100) NOT NULL AFTER category_id",
+        "color_name" => "ALTER TABLE store_category_sizes ADD COLUMN color_name VARCHAR(100) NOT NULL DEFAULT '' AFTER size_name",
         "quantity" => "ALTER TABLE store_category_sizes ADD COLUMN quantity INT(11) NOT NULL DEFAULT 0 AFTER size_name",
         "created_at" => "ALTER TABLE store_category_sizes ADD COLUMN created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP AFTER quantity",
         "updated_at" => "ALTER TABLE store_category_sizes ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at",
@@ -82,6 +86,29 @@ function ensureStoreCategoriesTable(PDO $pdo)
             } catch (Throwable $throwable) {
                 error_log("Failed to ensure store_category_sizes.{$columnName}: " . $throwable->getMessage());
             }
+        }
+    }
+
+    $sizeIndexesStmt = $pdo->prepare(
+        "SELECT INDEX_NAME
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'store_category_sizes'"
+    );
+    $sizeIndexesStmt->execute();
+    $existingIndexNames = array_column($sizeIndexesStmt->fetchAll(), "INDEX_NAME");
+    if (in_array("unique_store_category_size_name", $existingIndexNames, true)) {
+        try {
+            $pdo->exec("ALTER TABLE store_category_sizes DROP INDEX unique_store_category_size_name");
+        } catch (Throwable $throwable) {
+            error_log("Failed to drop unique_store_category_size_name: " . $throwable->getMessage());
+        }
+    }
+    if (!in_array("unique_store_category_variant_name", $existingIndexNames, true)) {
+        try {
+            $pdo->exec("ALTER TABLE store_category_sizes ADD UNIQUE KEY unique_store_category_variant_name (category_id, size_name, color_name)");
+        } catch (Throwable $throwable) {
+            error_log("Failed to add unique_store_category_variant_name: " . $throwable->getMessage());
         }
     }
 }
@@ -358,7 +385,7 @@ function fetchSalesCategories(PDO $pdo, $gameId)
     $stmt->execute([(int)$gameId]);
 
     $sizesStmt = $pdo->prepare(
-        "SELECT scs.category_id, scs.size_name, scs.quantity
+        "SELECT scs.category_id, scs.size_name, scs.color_name, scs.quantity
          FROM store_category_sizes scs
          INNER JOIN store_categories sc ON sc.id = scs.category_id
          WHERE sc.game_id = ?
@@ -371,8 +398,12 @@ function fetchSalesCategories(PDO $pdo, $gameId)
         if (!isset($sizesByCategoryId[$categoryId])) {
             $sizesByCategoryId[$categoryId] = [];
         }
+        $variantLabel = (string)$sizeRow["size_name"];
+        if (trim((string)($sizeRow["color_name"] ?? "")) !== "") {
+            $variantLabel .= " - " . trim((string)$sizeRow["color_name"]);
+        }
         $sizesByCategoryId[$categoryId][] = [
-            "size_name" => (string)$sizeRow["size_name"],
+            "size_name" => $variantLabel,
             "quantity" => (int)$sizeRow["quantity"],
         ];
     }
@@ -548,7 +579,7 @@ function lockSalesCategories(PDO $pdo, $gameId, array $categoryIds)
     }
 
     $sizesStmt = $pdo->prepare(
-        "SELECT scs.category_id, scs.size_name, scs.quantity
+        "SELECT scs.category_id, scs.size_name, scs.color_name, scs.quantity
          FROM store_category_sizes scs
          WHERE scs.category_id IN (" . buildSalesLockPlaceholders(array_keys($lockedCategories)) . ")
          FOR UPDATE"
@@ -557,6 +588,9 @@ function lockSalesCategories(PDO $pdo, $gameId, array $categoryIds)
     foreach ($sizesStmt->fetchAll() as $sizeRow) {
         $categoryId = (int)$sizeRow["category_id"];
         $sizeName = (string)$sizeRow["size_name"];
+        if (trim((string)($sizeRow["color_name"] ?? "")) !== "") {
+            $sizeName .= " - " . trim((string)$sizeRow["color_name"]);
+        }
         if (!isset($lockedCategories[$categoryId])) {
             continue;
         }

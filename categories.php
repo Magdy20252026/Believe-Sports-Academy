@@ -15,6 +15,7 @@ function ensureStoreCategoriesTable(PDO $pdo)
             game_id INT(11) NOT NULL,
             category_name VARCHAR(150) NOT NULL,
             pricing_type VARCHAR(30) NOT NULL DEFAULT 'price_only',
+            variant_type VARCHAR(30) NOT NULL DEFAULT 'none',
             has_sizes TINYINT(1) NOT NULL DEFAULT 0,
             quantity INT(11) NULL DEFAULT NULL,
             price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
@@ -28,6 +29,7 @@ function ensureStoreCategoriesTable(PDO $pdo)
 
     $requiredColumns = [
         "pricing_type" => "ALTER TABLE store_categories ADD COLUMN pricing_type VARCHAR(30) NOT NULL DEFAULT 'price_only' AFTER category_name",
+        "variant_type" => "ALTER TABLE store_categories ADD COLUMN variant_type VARCHAR(30) NOT NULL DEFAULT 'none' AFTER pricing_type",
         "has_sizes" => "ALTER TABLE store_categories ADD COLUMN has_sizes TINYINT(1) NOT NULL DEFAULT 0 AFTER pricing_type",
         "quantity" => "ALTER TABLE store_categories ADD COLUMN quantity INT(11) NULL DEFAULT NULL AFTER has_sizes",
         "price" => "ALTER TABLE store_categories ADD COLUMN price DECIMAL(10,2) NOT NULL DEFAULT 0.00 AFTER quantity",
@@ -89,17 +91,19 @@ function ensureStoreCategoriesTable(PDO $pdo)
             id INT(11) NOT NULL AUTO_INCREMENT,
             category_id INT(11) NOT NULL,
             size_name VARCHAR(100) NOT NULL,
+            color_name VARCHAR(100) NOT NULL DEFAULT '',
             quantity INT(11) NOT NULL DEFAULT 0,
             created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            UNIQUE KEY unique_store_category_size_name (category_id, size_name),
+            UNIQUE KEY unique_store_category_variant_name (category_id, size_name, color_name),
             KEY idx_store_category_sizes_category (category_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
     );
 
     $sizeRequiredColumns = [
         "size_name" => "ALTER TABLE store_category_sizes ADD COLUMN size_name VARCHAR(100) NOT NULL AFTER category_id",
+        "color_name" => "ALTER TABLE store_category_sizes ADD COLUMN color_name VARCHAR(100) NOT NULL DEFAULT '' AFTER size_name",
         "quantity" => "ALTER TABLE store_category_sizes ADD COLUMN quantity INT(11) NOT NULL DEFAULT 0 AFTER size_name",
         "created_at" => "ALTER TABLE store_category_sizes ADD COLUMN created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP AFTER quantity",
         "updated_at" => "ALTER TABLE store_category_sizes ADD COLUMN updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at",
@@ -115,6 +119,29 @@ function ensureStoreCategoriesTable(PDO $pdo)
                     . $throwable->getMessage()
                 );
             }
+        }
+    }
+
+    $sizeIndexesStmt = $pdo->prepare(
+        "SELECT INDEX_NAME
+         FROM information_schema.STATISTICS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'store_category_sizes'"
+    );
+    $sizeIndexesStmt->execute();
+    $existingIndexNames = array_column($sizeIndexesStmt->fetchAll(), "INDEX_NAME");
+    if (in_array("unique_store_category_size_name", $existingIndexNames, true)) {
+        try {
+            $pdo->exec("ALTER TABLE store_category_sizes DROP INDEX unique_store_category_size_name");
+        } catch (Throwable $throwable) {
+            error_log("Failed to drop unique_store_category_size_name: " . $throwable->getMessage());
+        }
+    }
+    if (!in_array("unique_store_category_variant_name", $existingIndexNames, true)) {
+        try {
+            $pdo->exec("ALTER TABLE store_category_sizes ADD UNIQUE KEY unique_store_category_variant_name (category_id, size_name, color_name)");
+        } catch (Throwable $throwable) {
+            error_log("Failed to add unique_store_category_variant_name: " . $throwable->getMessage());
         }
     }
 
@@ -194,21 +221,23 @@ function formatEgyptianCurrency($value)
     return number_format((float)$value, 2) . " ج.م";
 }
 
-function normalizeCategorySizeRows(array $sizeNames, array $sizeQuantities)
+function normalizeCategorySizeRows(array $sizeNames, array $sizeColors, array $sizeQuantities)
 {
     $rows = [];
-    $rowCount = max(count($sizeNames), count($sizeQuantities));
+    $rowCount = max(count($sizeNames), count($sizeColors), count($sizeQuantities));
 
     for ($index = 0; $index < $rowCount; $index++) {
         $sizeName = trim((string)($sizeNames[$index] ?? ""));
+        $colorName = trim((string)($sizeColors[$index] ?? ""));
         $quantity = normalizeCategoryQuantityValue($sizeQuantities[$index] ?? "");
 
-        if ($sizeName === "" && $quantity === "") {
+        if ($sizeName === "" && $colorName === "" && $quantity === "") {
             continue;
         }
 
         $rows[] = [
             "size_name" => $sizeName,
+            "color_name" => $colorName,
             "quantity" => $quantity,
         ];
     }
@@ -241,26 +270,34 @@ function normalizeCategorySizeKey($value)
 function hasDuplicateCategorySizeNames(array $sizeRows)
 {
     $normalizedNames = array_map(function ($sizeRow) {
-        return normalizeCategorySizeKey($sizeRow["size_name"] ?? "");
+        return normalizeCategorySizeKey($sizeRow["size_name"] ?? "") . "|" . normalizeCategorySizeKey($sizeRow["color_name"] ?? "");
     }, $sizeRows);
 
     return count(array_unique($normalizedNames)) !== count($sizeRows);
 }
 
-function getCategorySizeRowsValidationError(array $sizeRows)
+function getCategorySizeRowsValidationError(array $sizeRows, $variantType)
 {
     if (count($sizeRows) === 0) {
-        return "أضف مقاسًا واحدًا على الأقل لهذا الصنف.";
+        return $variantType === "size_color"
+            ? "أضف مقاسًا ولونًا واحدًا على الأقل لهذا الصنف."
+            : "أضف مقاسًا واحدًا على الأقل لهذا الصنف.";
     }
 
     if (hasDuplicateCategorySizeNames($sizeRows)) {
-        return "لا يمكن تكرار نفس المقاس داخل الصنف.";
+        return $variantType === "size_color"
+            ? "لا يمكن تكرار نفس المقاس واللون داخل الصنف."
+            : "لا يمكن تكرار نفس المقاس داخل الصنف.";
     }
 
     foreach ($sizeRows as $sizeRow) {
         $sizeName = trim((string)($sizeRow["size_name"] ?? ""));
+        $colorName = trim((string)($sizeRow["color_name"] ?? ""));
         if ($sizeName === "" || mb_strlen($sizeName) > 100 || ($sizeRow["quantity"] ?? "") === "") {
             return "كل مقاس يجب أن يحتوي على اسم لا يتجاوز 100 حرف وعدد صحيح أكبر من صفر.";
+        }
+        if ($variantType === "size_color" && ($colorName === "" || mb_strlen($colorName) > 100)) {
+            return "كل صف يجب أن يحتوي على مقاس ولون لا يتجاوز 100 حرف وعدد صحيح أكبر من صفر.";
         }
     }
 
@@ -280,7 +317,7 @@ function fetchCategorySizesByCategoryIds(PDO $pdo, array $categoryIds)
 
     $placeholders = implode(", ", array_fill(0, count($categoryIds), "?"));
     $stmt = $pdo->prepare(
-        "SELECT category_id, size_name, quantity
+        "SELECT category_id, size_name, color_name, quantity
          FROM store_category_sizes
          WHERE category_id IN (" . $placeholders . ")
          ORDER BY size_name ASC, id ASC"
@@ -296,6 +333,7 @@ function fetchCategorySizesByCategoryIds(PDO $pdo, array $categoryIds)
 
         $sizesByCategoryId[$categoryId][] = [
             "size_name" => (string)$row["size_name"],
+            "color_name" => (string)($row["color_name"] ?? ""),
             "quantity" => (int)$row["quantity"],
         ];
     }
@@ -389,11 +427,12 @@ $formData = [
     "id" => 0,
     "category_name" => "",
     "pricing_type" => "price_only",
+    "variant_type" => "none",
     "has_sizes" => false,
     "quantity" => "",
     "price" => "",
     "sizes" => [
-        ["size_name" => "", "quantity" => ""],
+        ["size_name" => "", "color_name" => "", "quantity" => ""],
     ],
 ];
 
@@ -416,17 +455,22 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 "id" => (int)($_POST["category_id"] ?? 0),
                 "category_name" => trim((string)($_POST["category_name"] ?? "")),
                 "pricing_type" => (string)($_POST["pricing_type"] ?? "price_only"),
-                "has_sizes" => isset($_POST["has_sizes"]),
+                "variant_type" => (string)($_POST["variant_type"] ?? "none"),
+                "has_sizes" => false,
                 "quantity" => normalizeCategoryQuantityValue($_POST["quantity"] ?? ""),
                 "price" => normalizeCategoryPriceValue($_POST["price"] ?? ""),
                 "sizes" => normalizeCategorySizeRows(
                     is_array($_POST["size_name"] ?? null) ? $_POST["size_name"] : [],
+                    is_array($_POST["size_color"] ?? null) ? $_POST["size_color"] : [],
                     is_array($_POST["size_quantity"] ?? null) ? $_POST["size_quantity"] : []
                 ),
             ];
+            $formData["has_sizes"] = $formData["variant_type"] !== "none";
 
             if (!isset($pricingTypes[$formData["pricing_type"]])) {
                 $error = "نوع التسعير غير صالح.";
+            } elseif (!in_array($formData["variant_type"], ["none", "size", "size_color"], true)) {
+                $error = "نوع تفاصيل الصنف غير صالح.";
             } elseif ($formData["category_name"] === "") {
                 $error = "اسم الصنف مطلوب.";
             } elseif (mb_strlen($formData["category_name"]) > 150) {
@@ -434,7 +478,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif ($formData["price"] === "") {
                 $error = "السعر يجب أن يكون رقماً موجباً أو صفراً.";
             } elseif ($formData["has_sizes"]) {
-                $error = getCategorySizeRowsValidationError($formData["sizes"]);
+                $error = getCategorySizeRowsValidationError($formData["sizes"], $formData["variant_type"]);
             } elseif (
                 $formData["pricing_type"] === "price_with_quantity"
                 && !$formData["has_sizes"]
@@ -465,12 +509,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     if ($formData["id"] > 0) {
                         $updateStmt = $pdo->prepare(
                             "UPDATE store_categories
-                             SET category_name = ?, pricing_type = ?, has_sizes = ?, quantity = ?, price = ?
+                             SET category_name = ?, pricing_type = ?, variant_type = ?, has_sizes = ?, quantity = ?, price = ?
                              WHERE id = ? AND game_id = ?"
                         );
                         $updateStmt->execute([
                             $formData["category_name"],
                             $formData["pricing_type"],
+                            $formData["variant_type"],
                             $formData["has_sizes"] ? 1 : 0,
                             $quantityValue,
                             $formData["price"],
@@ -482,13 +527,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         $_SESSION["categories_success"] = "تم تعديل الصنف ✅";
                     } else {
                         $insertStmt = $pdo->prepare(
-                            "INSERT INTO store_categories (game_id, category_name, pricing_type, has_sizes, quantity, price)
-                             VALUES (?, ?, ?, ?, ?, ?)"
+                            "INSERT INTO store_categories (game_id, category_name, pricing_type, variant_type, has_sizes, quantity, price)
+                             VALUES (?, ?, ?, ?, ?, ?, ?)"
                         );
                         $insertStmt->execute([
                             $currentGameId,
                             $formData["category_name"],
                             $formData["pricing_type"],
+                            $formData["variant_type"],
                             $formData["has_sizes"] ? 1 : 0,
                             $quantityValue,
                             $formData["price"],
@@ -503,13 +549,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                     if ($formData["has_sizes"] && count($formData["sizes"]) > 0) {
                         $insertSizeStmt = $pdo->prepare(
-                            "INSERT INTO store_category_sizes (category_id, size_name, quantity)
-                             VALUES (?, ?, ?)"
+                            "INSERT INTO store_category_sizes (category_id, size_name, color_name, quantity)
+                             VALUES (?, ?, ?, ?)"
                         );
                         foreach ($formData["sizes"] as $sizeRow) {
                             $insertSizeStmt->execute([
                                 $categoryIdForSizes,
                                 $sizeRow["size_name"],
+                                $sizeRow["color_name"],
                                 (int)$sizeRow["quantity"],
                             ]);
                         }
@@ -559,7 +606,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 $editCategoryId = (int)($_GET["edit"] ?? 0);
 if ($editCategoryId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
     $editStmt = $pdo->prepare(
-        "SELECT id, category_name, pricing_type, has_sizes, quantity, price
+        "SELECT id, category_name, pricing_type, variant_type, has_sizes, quantity, price
          FROM store_categories
          WHERE id = ? AND game_id = ?
          LIMIT 1"
@@ -578,17 +625,18 @@ if ($editCategoryId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
             "id" => (int)$editCategory["id"],
             "category_name" => (string)$editCategory["category_name"],
             "pricing_type" => $storedPricingType,
+            "variant_type" => (string)($editCategory["variant_type"] ?? ((int)($editCategory["has_sizes"] ?? 0) === 1 ? "size" : "none")),
             "has_sizes" => (int)($editCategory["has_sizes"] ?? 0) === 1,
             "quantity" => $editCategory["quantity"] === null ? "" : (string)$editCategory["quantity"],
             "price" => number_format((float)$editCategory["price"], 2, ".", ""),
             "sizes" => [
-                ["size_name" => "", "quantity" => ""],
+                ["size_name" => "", "color_name" => "", "quantity" => ""],
             ],
         ];
 
         if ($formData["has_sizes"]) {
             $sizeStmt = $pdo->prepare(
-                "SELECT size_name, quantity
+                "SELECT size_name, color_name, quantity
                  FROM store_category_sizes
                  WHERE category_id = ?
                  ORDER BY size_name ASC, id ASC"
@@ -598,6 +646,7 @@ if ($editCategoryId > 0 && $_SERVER["REQUEST_METHOD"] !== "POST") {
             foreach ($sizeStmt->fetchAll() as $sizeRow) {
                 $loadedSizes[] = [
                     "size_name" => (string)$sizeRow["size_name"],
+                    "color_name" => (string)($sizeRow["color_name"] ?? ""),
                     "quantity" => (string)(int)$sizeRow["quantity"],
                 ];
             }
@@ -730,10 +779,21 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث الصنف" : "حفظ ا�
                         </div>
 
                         <div class="form-group category-field-full">
-                            <label class="pricing-option">
-                                <input type="checkbox" name="has_sizes" id="hasSizesInput" value="1" <?php echo $formData["has_sizes"] ? "checked" : ""; ?>>
-                                <span class="pricing-option-body">هذا الصنف له مقاسات</span>
-                            </label>
+                            <label>تفاصيل الصنف</label>
+                            <div class="pricing-option-grid">
+                                <label class="pricing-option">
+                                    <input type="radio" name="variant_type" value="none" <?php echo $formData["variant_type"] === "none" ? "checked" : ""; ?>>
+                                    <span class="pricing-option-body">بدون مقاس أو لون</span>
+                                </label>
+                                <label class="pricing-option">
+                                    <input type="radio" name="variant_type" value="size" <?php echo $formData["variant_type"] === "size" ? "checked" : ""; ?>>
+                                    <span class="pricing-option-body">مقاس فقط</span>
+                                </label>
+                                <label class="pricing-option">
+                                    <input type="radio" name="variant_type" value="size_color" <?php echo $formData["variant_type"] === "size_color" ? "checked" : ""; ?>>
+                                    <span class="pricing-option-body">مقاس ولون</span>
+                                </label>
+                            </div>
                         </div>
 
                         <div class="form-group" id="quantityField" <?php echo $formData["pricing_type"] === "price_with_quantity" && !$formData["has_sizes"] ? "" : "hidden"; ?>>
@@ -749,9 +809,9 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث الصنف" : "حفظ ا�
                         <div class="form-group category-field-full" id="sizesField" <?php echo $formData["has_sizes"] ? "" : "hidden"; ?>>
                             <div class="card-head" style="padding:0; margin-bottom:0.75rem;">
                                 <div>
-                                    <h3 style="font-size:1rem;">المقاسات</h3>
+                                    <h3 style="font-size:1rem;">الخيارات المتاحة</h3>
                                 </div>
-                                <button type="button" class="btn btn-soft" id="addSizeRowButton">إضافة مقاس</button>
+                                <button type="button" class="btn btn-soft" id="addSizeRowButton">إضافة خيار</button>
                             </div>
                             <div id="sizesRows">
                                 <?php foreach ($formData["sizes"] as $sizeRow): ?>
@@ -759,6 +819,10 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث الصنف" : "حفظ ا�
                                         <div class="form-group">
                                             <label>المقاس</label>
                                             <input type="text" name="size_name[]" value="<?php echo htmlspecialchars((string)$sizeRow["size_name"], ENT_QUOTES, "UTF-8"); ?>">
+                                        </div>
+                                        <div class="form-group size-color-field" <?php echo $formData["variant_type"] === "size_color" ? "" : "hidden"; ?>>
+                                            <label>اللون</label>
+                                            <input type="text" name="size_color[]" value="<?php echo htmlspecialchars((string)($sizeRow["color_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>">
                                         </div>
                                         <div class="form-group">
                                             <label>العدد</label>
@@ -791,7 +855,7 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث الصنف" : "حفظ ا�
                             <tr>
                                 <th>الصنف</th>
                                 <th>النوع</th>
-                                <th>المقاسات</th>
+                                <th>الخيارات</th>
                                 <th>العدد</th>
                                 <th>السعر</th>
                                 <th>أضيف بواسطة</th>
@@ -817,13 +881,13 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث الصنف" : "حفظ ا�
                                                 <?php echo htmlspecialchars($pricingTypes[$category["pricing_type"]] ?? $pricingTypes["price_only"], ENT_QUOTES, "UTF-8"); ?>
                                             </span>
                                         </td>
-                                        <td data-label="المقاسات">
+                                        <td data-label="الخيارات">
                                             <?php $categorySizes = $categorySizesMap[(int)$category["id"]] ?? []; ?>
                                             <?php if ((int)($category["has_sizes"] ?? 0) === 1 && count($categorySizes) > 0): ?>
                                                 <div class="table-badges">
                                                     <?php foreach ($categorySizes as $categorySize): ?>
                                                         <span class="badge">
-                                                            <?php echo htmlspecialchars($categorySize["size_name"] . " (" . (int)$categorySize["quantity"] . ")", ENT_QUOTES, "UTF-8"); ?>
+                                                            <?php echo htmlspecialchars(trim($categorySize["size_name"] . ((string)($categorySize["color_name"] ?? "") !== "" ? " - " . $categorySize["color_name"] : "")) . " (" . (int)$categorySize["quantity"] . ")", ENT_QUOTES, "UTF-8"); ?>
                                                         </span>
                                                     <?php endforeach; ?>
                                                 </div>
@@ -868,14 +932,14 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث الصنف" : "حفظ ا�
 <script>
 document.addEventListener("DOMContentLoaded", function () {
     const pricingTypeInputs = document.querySelectorAll('input[name="pricing_type"]');
+    const variantTypeInputs = document.querySelectorAll('input[name="variant_type"]');
     const quantityField = document.getElementById("quantityField");
     const quantityInput = document.getElementById("quantity");
-    const hasSizesInput = document.getElementById("hasSizesInput");
     const sizesField = document.getElementById("sizesField");
     const sizesRows = document.getElementById("sizesRows");
     const addSizeRowButton = document.getElementById("addSizeRowButton");
 
-    if (pricingTypeInputs.length === 0 || !quantityField || !quantityInput || !hasSizesInput || !sizesField || !sizesRows || !addSizeRowButton) {
+    if (pricingTypeInputs.length === 0 || variantTypeInputs.length === 0 || !quantityField || !quantityInput || !sizesField || !sizesRows || !addSizeRowButton) {
         return;
     }
 
@@ -909,23 +973,37 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const updateQuantityVisibility = function () {
         const selectedPricingType = document.querySelector('input[name="pricing_type"]:checked');
-        const shouldShowQuantity = selectedPricingType && selectedPricingType.value === "price_with_quantity" && !hasSizesInput.checked;
+        const selectedVariantType = document.querySelector('input[name="variant_type"]:checked');
+        const hasVariants = selectedVariantType && selectedVariantType.value !== "none";
+        const showColors = selectedVariantType && selectedVariantType.value === "size_color";
+        const shouldShowQuantity = selectedPricingType && selectedPricingType.value === "price_with_quantity" && !hasVariants;
         const sizeNameInputs = sizesRows.querySelectorAll('input[name="size_name[]"]');
+        const sizeColorInputs = sizesRows.querySelectorAll('input[name="size_color[]"]');
         const sizeQuantityInputs = sizesRows.querySelectorAll('input[name="size_quantity[]"]');
 
         quantityField.hidden = !shouldShowQuantity;
         quantityInput.required = shouldShowQuantity;
-        sizesField.hidden = !hasSizesInput.checked;
+        sizesField.hidden = !hasVariants;
 
         if (!shouldShowQuantity) {
             quantityInput.value = "";
         }
 
         sizeNameInputs.forEach(function (input) {
-            input.required = hasSizesInput.checked;
+            input.required = hasVariants;
+        });
+        sizeColorInputs.forEach(function (input) {
+            input.required = showColors;
+            if (!showColors) {
+                input.value = "";
+            }
         });
         sizeQuantityInputs.forEach(function (input) {
-            input.required = hasSizesInput.checked;
+            input.required = hasVariants;
+        });
+
+        sizesRows.querySelectorAll(".size-color-field").forEach(function (field) {
+            field.hidden = !showColors;
         });
     };
 
@@ -933,7 +1011,9 @@ document.addEventListener("DOMContentLoaded", function () {
         pricingTypeInput.addEventListener("change", updateQuantityVisibility);
     });
 
-    hasSizesInput.addEventListener("change", updateQuantityVisibility);
+    variantTypeInputs.forEach(function (variantTypeInput) {
+        variantTypeInput.addEventListener("change", updateQuantityVisibility);
+    });
 
     addSizeRowButton.addEventListener("click", function () {
         const rowElement = document.createElement("div");
@@ -942,6 +1022,10 @@ document.addEventListener("DOMContentLoaded", function () {
             <div class="form-group">
                 <label>المقاس</label>
                 <input type="text" name="size_name[]">
+            </div>
+            <div class="form-group size-color-field" hidden>
+                <label>اللون</label>
+                <input type="text" name="size_color[]">
             </div>
             <div class="form-group">
                 <label>العدد</label>

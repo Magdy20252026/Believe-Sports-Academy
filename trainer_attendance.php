@@ -4,6 +4,7 @@ startSecureSession();
 require_once "config.php";
 require_once "navigation.php";
 require_once "salary_collection_helpers.php";
+require_once "schedule_exceptions_support.php";
 
 date_default_timezone_set("Africa/Cairo");
 
@@ -143,6 +144,9 @@ function createTrainerAttendanceDate($date)
 function formatTrainerAttendanceStatusBadgeClass($status)
 {
     $status = trim((string)$status);
+    if ($status === TRAINER_ATTENDANCE_STATUS_EMERGENCY_LEAVE) {
+        return "status-warning";
+    }
     if ($status === "حضور في الميعاد" || $status === "انصراف في الميعاد" || $status === "مكتمل") {
         return "status-success";
     }
@@ -545,17 +549,41 @@ function syncTrainerAbsenceRows(PDO $pdo, $gameId, array $trainers, DateTimeImmu
     foreach ($trainers as $trainer) {
         $trainerId = (int)$trainer["id"];
         $createdDate = createTrainerAttendanceDate(substr((string)$trainer["created_at"], 0, 10));
-        if ($createdDate > $yesterday) {
+        if ($createdDate > $today) {
             continue;
         }
 
         $dayKeys = $trainer["day_keys"] ?? [];
         $cursor = $createdDate;
-        while ($cursor <= $yesterday) {
+        while ($cursor <= $today) {
             $attendanceDate = $cursor->format("Y-m-d");
             $dayKey = getTrainerAttendanceDayKeyFromDate($cursor);
-            $daySchedule = getTrainerAttendanceScheduleForDay($trainer, $dayKey);
-            if (!in_array($dayKey, $dayKeys, true) && is_array($daySchedule) && empty($existingRows[$trainerId][$attendanceDate])) {
+            $emergencySchedule = resolveTrainerEmergencyScheduleForDate($trainer, $cursor);
+            if (($emergencySchedule["is_leave"] ?? false) && empty($existingRows[$trainerId][$attendanceDate])) {
+                $insertRows[] = [
+                    (int)$gameId,
+                    $trainerId,
+                    $attendanceDate,
+                    (string)($emergencySchedule["schedule"]["attendance_time"] ?? "00:00:00"),
+                    (string)($emergencySchedule["schedule"]["departure_time"] ?? ($emergencySchedule["schedule"]["attendance_time"] ?? "00:00:00")),
+                    TRAINER_ATTENDANCE_STATUS_EMERGENCY_LEAVE,
+                    TRAINER_ATTENDANCE_STATUS_EMERGENCY_LEAVE,
+                    TRAINER_ATTENDANCE_STATUS_EMERGENCY_LEAVE,
+                ];
+                $cursor = $cursor->modify("+1 day");
+                continue;
+            }
+
+            if ($cursor > $yesterday) {
+                $cursor = $cursor->modify("+1 day");
+                continue;
+            }
+
+            $daySchedule = is_array($emergencySchedule["schedule"] ?? null)
+                ? $emergencySchedule["schedule"]
+                : getTrainerAttendanceScheduleForDay($trainer, $dayKey);
+            $isEmergencyReplacementDay = ($emergencySchedule["type"] ?? "") === "replacement";
+            if (($isEmergencyReplacementDay || !in_array($dayKey, $dayKeys, true)) && is_array($daySchedule) && empty($existingRows[$trainerId][$attendanceDate])) {
                 $insertRows[] = [
                     (int)$gameId,
                     $trainerId,
@@ -896,9 +924,19 @@ function handleTrainerAttendanceScan(PDO $pdo, array $trainer, DateTimeImmutable
     $todayDate = $now->format("Y-m-d");
     $dayKey = getTrainerAttendanceDayKeyFromDate($now);
     $trainerDayKeys = $trainer["day_keys"] ?? [];
-    $daySchedule = getTrainerAttendanceScheduleForDay($trainer, $dayKey);
+    $emergencySchedule = resolveTrainerEmergencyScheduleForDate($trainer, $now);
+    $daySchedule = is_array($emergencySchedule["schedule"] ?? null)
+        ? $emergencySchedule["schedule"]
+        : getTrainerAttendanceScheduleForDay($trainer, $dayKey);
     $isDayOff = in_array($dayKey, $trainerDayKeys, true);
     $dayOffNotice = $isDayOff ? " تنبيه: اليوم إجازة هذا المدرب وتم تسجيل العملية بناءً على طلب المستخدم." : "";
+
+    if (($emergencySchedule["is_leave"] ?? false) === true) {
+        return [
+            "success" => false,
+            "message" => "اليوم مسجل للمدرب كإجازة طارئة.",
+        ];
+    }
 
     if (!is_array($daySchedule)) {
         if ($isDayOff) {
@@ -1086,12 +1124,15 @@ $egyptDateTimeLabel = formatTrainerAttendanceDateTimeLabel($now);
 $defaultAttendanceDate = $now->format("Y-m-d");
 
 $trainers = fetchTrainerAttendanceTrainers($pdo, $currentGameId);
+$trainerScheduleExceptionMap = buildTrainerScheduleExceptionMap(fetchScheduleExceptionRows($pdo, $currentGameId));
 $trainerBarcodeMap = [];
-foreach ($trainers as $trainer) {
+foreach ($trainers as &$trainer) {
+    $trainer["exception_dates"] = $trainerScheduleExceptionMap[trim((string)($trainer["name"] ?? ""))] ?? [];
     if ($trainer["barcode"] !== "") {
         $trainerBarcodeMap[$trainer["barcode"]] = $trainer;
     }
 }
+unset($trainer);
 
 try {
     syncTrainerAbsenceRows($pdo, $currentGameId, $trainers, $now);

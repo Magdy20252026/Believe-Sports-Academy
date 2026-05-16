@@ -12,6 +12,7 @@ if (!isset($_SESSION["player_portal_logged_in"]) || $_SESSION["player_portal_log
 require_once "config.php";
 require_once "players_support.php";
 require_once "game_levels_support.php";
+require_once "schedule_exceptions_support.php";
 
 const PPORT_ATTENDANCE_STATUS_LATE = "late";
 
@@ -120,17 +121,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $customerName = trim((string)($_POST["customer_name"] ?? ""));
             $customerPhone = trim((string)($_POST["customer_phone"] ?? ""));
             $deliveryAddress = trim((string)($_POST["delivery_address"] ?? ""));
-            $notes = trim((string)($_POST["notes"] ?? ""));
 
             if ($productId <= 0 || $customerName === "" || $customerPhone === "" || $deliveryAddress === "") {
                 $pageError = "يرجى تعبئة جميع البيانات المطلوبة.";
             } else {
                 try {
                     $pStmt = $pdo->prepare(
-                        "SELECT id, product_name, price, is_available, game_id
-                         FROM store_products WHERE id = ? AND game_id = ? LIMIT 1"
+                        "SELECT sp.id, sp.product_name, sp.price, sp.is_available, sp.game_id, g.name AS game_name
+                         FROM store_products sp
+                         LEFT JOIN games g ON g.id = sp.game_id
+                         WHERE sp.id = ? LIMIT 1"
                     );
-                    $pStmt->execute([$productId, $playerGameId]);
+                    $pStmt->execute([$productId]);
                     $product = $pStmt->fetch();
 
                     if (!$product || (int)$product["is_available"] !== 1) {
@@ -140,14 +142,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         $total = $unitPrice * $quantity;
                         $ins = $pdo->prepare(
                             "INSERT INTO store_orders
-                             (game_id, player_id, product_id, product_name, unit_price, quantity, total_price,
-                              customer_name, customer_phone, delivery_address, notes, status)
-                             VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending')"
+                              (game_id, player_id, product_id, product_name, unit_price, quantity, total_price,
+                               customer_name, customer_phone, delivery_address, notes, status)
+                              VALUES (?,?,?,?,?,?,?,?,?,?,?, 'pending')"
                         );
                         $ins->execute([
-                            $playerGameId, $playerId, $productId,
+                            (int)$product["game_id"], $playerId, $productId,
                             (string)$product["product_name"], $unitPrice, $quantity, $total,
-                            $customerName, $customerPhone, $deliveryAddress, $notes
+                            $customerName, $customerPhone, $deliveryAddress, ""
                         ]);
                         $pageMessage = "تم إرسال طلبك بنجاح. ستصلك رسالة عند مراجعته من الإدارة.";
                     }
@@ -251,11 +253,13 @@ if ($currentLevel !== '' && !$levelExists) {
 $storeProducts = [];
 try {
     $stmt = $pdo->prepare(
-        "SELECT id, product_name, price, image_path, is_available
-         FROM store_products WHERE game_id = ? AND is_available = 1
-         ORDER BY created_at DESC, id DESC"
+        "SELECT sp.id, sp.product_name, sp.price, sp.image_path, sp.is_available, sp.game_id, g.name AS game_name
+         FROM store_products sp
+         LEFT JOIN games g ON g.id = sp.game_id
+         WHERE sp.is_available = 1
+         ORDER BY sp.created_at DESC, sp.id DESC"
     );
-    $stmt->execute([$playerGameId]);
+    $stmt->execute();
     $storeProducts = $stmt->fetchAll();
 } catch (PDOException $ignored) {}
 
@@ -324,6 +328,7 @@ function pportAttBadge($s) {
     $map = [
         PLAYER_ATTENDANCE_STATUS_PRESENT => ["حاضر", "pp-badge-success"],
         PLAYER_ATTENDANCE_STATUS_ABSENT => ["غائب", "pp-badge-danger"],
+        PLAYER_ATTENDANCE_STATUS_EMERGENCY_LEAVE => ["إجازة طارئة", "pp-badge-warning"],
         PPORT_ATTENDANCE_STATUS_LATE => ["متأخر", "pp-badge-warning"],
     ];
     $s = pportNormalizeAttendanceStatus($s);
@@ -358,6 +363,8 @@ $groupTrainingDayTimes = decodePlayerScheduleDayTimes(
     $groupTrainingDayKeys,
     $player["sg_training_time"] ?? ''
 );
+$groupScheduleExceptionMap = buildGroupScheduleExceptionMap(fetchScheduleExceptionRows($pdo, $playerGameId));
+$groupEmergencyRows = $groupScheduleExceptionMap[(int)($player["group_id"] ?? 0)]["rows"] ?? [];
 $effectiveTrainingDayKeys = count($groupTrainingDayKeys) > 0 ? $groupTrainingDayKeys : $playerTrainingDayKeys;
 $effectiveTrainingDayTimes = count($groupTrainingDayTimes) > 0 ? $groupTrainingDayTimes : $playerTrainingDayTimes;
 $trainingDays = formatPlayerTrainingDaysLabel($effectiveTrainingDayKeys);
@@ -819,6 +826,20 @@ $displayTrainerName = trim((string)($player["sg_trainer_name"] ?? "")) !== ''
                             <?php elseif ($primaryTrainingTime !== ''): ?>
                                 <div class="pp-info-item"><div class="pp-info-lbl">موعد التمرين</div><div class="pp-info-val" dir="ltr"><?php echo pportEsc(pportFmtTime($primaryTrainingTime)); ?></div></div>
                             <?php endif; ?>
+                            <?php foreach (array_slice($groupEmergencyRows, 0, 2) as $emergencyRow): ?>
+                                <div class="pp-info-item">
+                                    <div class="pp-info-lbl">تعديل طارئ</div>
+                                    <div class="pp-info-val">
+                                        <?php echo pportEsc(formatScheduleExceptionDateLabel($emergencyRow["original_date"] ?? "")); ?>
+                                        <?php if (!empty($emergencyRow["replacement_date"])): ?>
+                                            → <?php echo pportEsc(formatScheduleExceptionDateLabel($emergencyRow["replacement_date"])); ?>
+                                            (<?php echo pportEsc(formatScheduleExceptionTimeLabel($emergencyRow["replacement_start_time"] ?? "")); ?>)
+                                        <?php else: ?>
+                                            - إجازة طارئة
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
                             <div class="pp-info-item"><div class="pp-info-lbl">إجمالي التمارين</div><div class="pp-info-val"><?php echo (int)$player["total_trainings"]; ?></div></div>
                             <div class="pp-info-item"><div class="pp-info-lbl">قيمة الاشتراك</div><div class="pp-info-val"><?php echo pportFmtCurrency($player["subscription_price"]); ?></div></div>
                             <div class="pp-info-item"><div class="pp-info-lbl">المبلغ المدفوع</div><div class="pp-info-val"><?php echo pportFmtCurrency($player["paid_amount"]); ?></div></div>
@@ -913,9 +934,9 @@ $displayTrainerName = trim((string)($player["sg_trainer_name"] ?? "")) !== ''
 
                 <?php elseif ($activeSection === 'store'): ?>
                     <div class="pp-section">
-                        <div class="pp-section-h">🏪 المتجر - <?php echo pportEsc($player["game_name"] ?? ""); ?></div>
+                        <div class="pp-section-h">🏪 المتجر</div>
                         <?php if (count($storeProducts) === 0): ?>
-                            <div class="pp-empty"><span>🏪</span>لا توجد منتجات متاحة في متجر هذه اللعبة.</div>
+                            <div class="pp-empty"><span>🏪</span>لا توجد منتجات متاحة حالياً.</div>
                         <?php else: ?>
                             <div class="pp-store-grid">
                                 <?php foreach ($storeProducts as $prod): ?>
@@ -927,6 +948,7 @@ $displayTrainerName = trim((string)($player["sg_trainer_name"] ?? "")) !== ''
                                         <?php endif; ?>
                                         <div class="pp-product-body">
                                             <div class="pp-product-name"><?php echo pportEsc($prod["product_name"]); ?></div>
+                                            <div class="pp-product-price" style="font-size:.82rem;color:var(--text-soft);"><?php echo pportEsc((string)($prod["game_name"] ?? "—")); ?></div>
                                             <div class="pp-product-price"><?php echo pportFmtCurrency($prod["price"]); ?></div>
                                             <button type="button" class="pp-product-btn"
                                                 onclick="ppOpenOrder(<?php echo (int)$prod["id"]; ?>, <?php echo htmlspecialchars(json_encode((string)$prod["product_name"], JSON_UNESCAPED_UNICODE), ENT_QUOTES, "UTF-8"); ?>, <?php echo (float)$prod["price"]; ?>)">
@@ -1019,10 +1041,6 @@ $displayTrainerName = trim((string)($player["sg_trainer_name"] ?? "")) !== ''
             <div class="pp-fg">
                 <label>عنوان التوصيل</label>
                 <textarea name="delivery_address" required placeholder="العنوان بالتفصيل"></textarea>
-            </div>
-            <div class="pp-fg">
-                <label>ملاحظات (اختياري)</label>
-                <textarea name="notes" placeholder="أي ملاحظات إضافية"></textarea>
             </div>
             <div class="pp-modal-actions">
                 <button type="submit" class="pp-btn">📨 إرسال الطلب</button>
