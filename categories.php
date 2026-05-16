@@ -276,33 +276,65 @@ function hasDuplicateCategorySizeNames(array $sizeRows)
     return count(array_unique($normalizedNames)) !== count($sizeRows);
 }
 
+function normalizeCategoryVariantRows(array $sizeRows, $variantType)
+{
+    foreach ($sizeRows as &$sizeRow) {
+        if ($variantType === "size") {
+            $sizeRow["color_name"] = "";
+        } elseif ($variantType === "color") {
+            $sizeRow["size_name"] = "";
+        }
+    }
+    unset($sizeRow);
+
+    return $sizeRows;
+}
+
 function getCategorySizeRowsValidationError(array $sizeRows, $variantType)
 {
     if (count($sizeRows) === 0) {
-        return $variantType === "size_color"
-            ? "أضف مقاسًا ولونًا واحدًا على الأقل لهذا الصنف."
-            : "أضف مقاسًا واحدًا على الأقل لهذا الصنف.";
+        if ($variantType === "size_color") {
+            return "أضف مقاسًا ولونًا واحدًا على الأقل لهذا الصنف.";
+        }
+        if ($variantType === "color") {
+            return "أضف لونًا واحدًا على الأقل لهذا الصنف.";
+        }
+
+        return "أضف مقاسًا واحدًا على الأقل لهذا الصنف.";
     }
 
     if (hasDuplicateCategorySizeNames($sizeRows)) {
-        return $variantType === "size_color"
-            ? "لا يمكن تكرار نفس المقاس واللون داخل الصنف."
-            : "لا يمكن تكرار نفس المقاس داخل الصنف.";
+        if ($variantType === "size_color") {
+            return "لا يمكن تكرار نفس المقاس واللون داخل الصنف.";
+        }
+        if ($variantType === "color") {
+            return "لا يمكن تكرار نفس اللون داخل الصنف.";
+        }
+
+        return "لا يمكن تكرار نفس المقاس داخل الصنف.";
     }
 
     foreach ($sizeRows as $sizeRow) {
         $sizeName = trim((string)($sizeRow["size_name"] ?? ""));
         $colorName = trim((string)($sizeRow["color_name"] ?? ""));
-        if ($sizeName === "" || mb_strlen($sizeName) > 100 || ($sizeRow["quantity"] ?? "") === "") {
+        if (
+            $variantType !== "color"
+            && ($sizeName === "" || mb_strlen($sizeName) > 100 || ($sizeRow["quantity"] ?? "") === "")
+        ) {
             return "كل مقاس يجب أن يحتوي على اسم لا يتجاوز 100 حرف وعدد صحيح أكبر من صفر.";
         }
-        if ($variantType === "size_color" && ($colorName === "" || mb_strlen($colorName) > 100)) {
-            return "كل صف يجب أن يحتوي على مقاس ولون لا يتجاوز 100 حرف وعدد صحيح أكبر من صفر.";
+        if (
+            ($variantType === "color" || $variantType === "size_color")
+            && ($colorName === "" || mb_strlen($colorName) > 100 || ($sizeRow["quantity"] ?? "") === "")
+        ) {
+            return $variantType === "size_color"
+                ? "كل صف يجب أن يحتوي على مقاس ولون لا يتجاوز 100 حرف وعدد صحيح أكبر من صفر."
+                : "كل لون يجب أن يحتوي على اسم لا يتجاوز 100 حرف وعدد صحيح أكبر من صفر.";
         }
     }
 
     if (getCategorySizesTotalQuantity($sizeRows) <= 0) {
-        return "إجمالي كميات المقاسات يجب أن يكون أكبر من صفر.";
+        return "إجمالي كميات الخيارات يجب أن يكون أكبر من صفر.";
     }
 
     return "";
@@ -339,6 +371,20 @@ function fetchCategorySizesByCategoryIds(PDO $pdo, array $categoryIds)
     }
 
     return $sizesByCategoryId;
+}
+
+function formatCategoryVariantLabel($sizeName, $colorName)
+{
+    $sizeName = trim((string)$sizeName);
+    $colorName = trim((string)$colorName);
+    if ($sizeName !== "" && $colorName !== "") {
+        return $sizeName . " - " . $colorName;
+    }
+    if ($sizeName !== "") {
+        return $sizeName;
+    }
+
+    return $colorName;
 }
 
 function storeCategoryExists(PDO $pdo, $gameId, $categoryId)
@@ -469,7 +515,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             if (!isset($pricingTypes[$formData["pricing_type"]])) {
                 $error = "نوع التسعير غير صالح.";
-            } elseif (!in_array($formData["variant_type"], ["none", "size", "size_color"], true)) {
+            } elseif (!in_array($formData["variant_type"], ["none", "size", "color", "size_color"], true)) {
                 $error = "نوع تفاصيل الصنف غير صالح.";
             } elseif ($formData["category_name"] === "") {
                 $error = "اسم الصنف مطلوب.";
@@ -478,6 +524,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             } elseif ($formData["price"] === "") {
                 $error = "السعر يجب أن يكون رقماً موجباً أو صفراً.";
             } elseif ($formData["has_sizes"]) {
+                $formData["sizes"] = normalizeCategoryVariantRows($formData["sizes"], $formData["variant_type"]);
                 $error = getCategorySizeRowsValidationError($formData["sizes"], $formData["variant_type"]);
             } elseif (
                 $formData["pricing_type"] === "price_with_quantity"
@@ -790,6 +837,10 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث الصنف" : "حفظ ا�
                                     <span class="pricing-option-body">مقاس فقط</span>
                                 </label>
                                 <label class="pricing-option">
+                                    <input type="radio" name="variant_type" value="color" <?php echo $formData["variant_type"] === "color" ? "checked" : ""; ?>>
+                                    <span class="pricing-option-body">لون فقط</span>
+                                </label>
+                                <label class="pricing-option">
                                     <input type="radio" name="variant_type" value="size_color" <?php echo $formData["variant_type"] === "size_color" ? "checked" : ""; ?>>
                                     <span class="pricing-option-body">مقاس ولون</span>
                                 </label>
@@ -813,14 +864,14 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث الصنف" : "حفظ ا�
                                 </div>
                                 <button type="button" class="btn btn-soft" id="addSizeRowButton">إضافة خيار</button>
                             </div>
-                            <div id="sizesRows">
-                                <?php foreach ($formData["sizes"] as $sizeRow): ?>
-                                    <div class="categories-form-grid size-row">
-                                        <div class="form-group">
+                                <div id="sizesRows">
+                                    <?php foreach ($formData["sizes"] as $sizeRow): ?>
+                                        <div class="categories-form-grid size-row">
+                                        <div class="form-group size-name-field" <?php echo $formData["variant_type"] === "color" ? "hidden" : ""; ?>>
                                             <label>المقاس</label>
                                             <input type="text" name="size_name[]" value="<?php echo htmlspecialchars((string)$sizeRow["size_name"], ENT_QUOTES, "UTF-8"); ?>">
                                         </div>
-                                        <div class="form-group size-color-field" <?php echo $formData["variant_type"] === "size_color" ? "" : "hidden"; ?>>
+                                        <div class="form-group size-color-field" <?php echo in_array($formData["variant_type"], ["color", "size_color"], true) ? "" : "hidden"; ?>>
                                             <label>اللون</label>
                                             <input type="text" name="size_color[]" value="<?php echo htmlspecialchars((string)($sizeRow["color_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>">
                                         </div>
@@ -887,12 +938,12 @@ $submitButtonLabel = $formData["id"] > 0 ? "تحديث الصنف" : "حفظ ا�
                                                 <div class="table-badges">
                                                     <?php foreach ($categorySizes as $categorySize): ?>
                                                         <span class="badge">
-                                                            <?php echo htmlspecialchars(trim($categorySize["size_name"] . ((string)($categorySize["color_name"] ?? "") !== "" ? " - " . $categorySize["color_name"] : "")) . " (" . (int)$categorySize["quantity"] . ")", ENT_QUOTES, "UTF-8"); ?>
+                                                            <?php echo htmlspecialchars(formatCategoryVariantLabel($categorySize["size_name"] ?? "", $categorySize["color_name"] ?? "") . " (" . (int)$categorySize["quantity"] . ")", ENT_QUOTES, "UTF-8"); ?>
                                                         </span>
                                                     <?php endforeach; ?>
                                                 </div>
                                             <?php else: ?>
-                                                <span class="info-pill">بدون مقاسات</span>
+                                                <span class="info-pill">بدون خيارات</span>
                                             <?php endif; ?>
                                         </td>
                                         <td data-label="العدد">
@@ -959,7 +1010,7 @@ document.addEventListener("DOMContentLoaded", function () {
         removeButton.addEventListener("click", function () {
             const rows = sizesRows.querySelectorAll(".size-row");
             if (rows.length <= 1) {
-                const inputs = rowElement.querySelectorAll('input[name="size_name[]"], input[name="size_quantity[]"]');
+                const inputs = rowElement.querySelectorAll('input[name="size_name[]"], input[name="size_color[]"], input[name="size_quantity[]"]');
                 inputs.forEach(function (input) {
                     input.value = "";
                 });
@@ -975,7 +1026,8 @@ document.addEventListener("DOMContentLoaded", function () {
         const selectedPricingType = document.querySelector('input[name="pricing_type"]:checked');
         const selectedVariantType = document.querySelector('input[name="variant_type"]:checked');
         const hasVariants = selectedVariantType && selectedVariantType.value !== "none";
-        const showColors = selectedVariantType && selectedVariantType.value === "size_color";
+        const showSizeNames = selectedVariantType && selectedVariantType.value !== "none" && selectedVariantType.value !== "color";
+        const showColors = selectedVariantType && (selectedVariantType.value === "color" || selectedVariantType.value === "size_color");
         const shouldShowQuantity = selectedPricingType && selectedPricingType.value === "price_with_quantity" && !hasVariants;
         const sizeNameInputs = sizesRows.querySelectorAll('input[name="size_name[]"]');
         const sizeColorInputs = sizesRows.querySelectorAll('input[name="size_color[]"]');
@@ -990,10 +1042,13 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         sizeNameInputs.forEach(function (input) {
-            input.required = hasVariants;
+            input.required = !!showSizeNames;
+            if (!showSizeNames) {
+                input.value = "";
+            }
         });
         sizeColorInputs.forEach(function (input) {
-            input.required = showColors;
+            input.required = !!showColors;
             if (!showColors) {
                 input.value = "";
             }
@@ -1002,6 +1057,9 @@ document.addEventListener("DOMContentLoaded", function () {
             input.required = hasVariants;
         });
 
+        sizesRows.querySelectorAll(".size-name-field").forEach(function (field) {
+            field.hidden = !showSizeNames;
+        });
         sizesRows.querySelectorAll(".size-color-field").forEach(function (field) {
             field.hidden = !showColors;
         });
@@ -1019,7 +1077,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const rowElement = document.createElement("div");
         rowElement.className = "categories-form-grid size-row";
         rowElement.innerHTML = `
-            <div class="form-group">
+            <div class="form-group size-name-field">
                 <label>المقاس</label>
                 <input type="text" name="size_name[]">
             </div>
