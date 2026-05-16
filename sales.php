@@ -374,10 +374,24 @@ function formatSalesDateTime($value)
     return formatEgyptDateTimeForDisplay($dateTime, "—", "Y-m-d", " • ");
 }
 
+function formatSalesVariantLabel($sizeName, $colorName)
+{
+    $sizeName = trim((string)$sizeName);
+    $colorName = trim((string)$colorName);
+    if ($sizeName !== "" && $colorName !== "") {
+        return $sizeName . " - " . $colorName;
+    }
+    if ($sizeName !== "") {
+        return $sizeName;
+    }
+
+    return $colorName;
+}
+
 function fetchSalesCategories(PDO $pdo, $gameId)
 {
     $stmt = $pdo->prepare(
-        "SELECT id, category_name, pricing_type, has_sizes, quantity, price
+        "SELECT id, category_name, pricing_type, variant_type, has_sizes, quantity, price
          FROM store_categories
          WHERE game_id = ?
          ORDER BY category_name ASC"
@@ -398,12 +412,11 @@ function fetchSalesCategories(PDO $pdo, $gameId)
         if (!isset($sizesByCategoryId[$categoryId])) {
             $sizesByCategoryId[$categoryId] = [];
         }
-        $variantLabel = (string)$sizeRow["size_name"];
-        if (trim((string)($sizeRow["color_name"] ?? "")) !== "") {
-            $variantLabel .= " - " . trim((string)$sizeRow["color_name"]);
-        }
+        $variantLabel = formatSalesVariantLabel($sizeRow["size_name"] ?? "", $sizeRow["color_name"] ?? "");
         $sizesByCategoryId[$categoryId][] = [
             "size_name" => $variantLabel,
+            "raw_size_name" => (string)($sizeRow["size_name"] ?? ""),
+            "raw_color_name" => (string)($sizeRow["color_name"] ?? ""),
             "quantity" => (int)$sizeRow["quantity"],
         ];
     }
@@ -416,6 +429,7 @@ function fetchSalesCategories(PDO $pdo, $gameId)
             "id" => $categoryId,
             "category_name" => (string)$category["category_name"],
             "pricing_type" => (string)($category["pricing_type"] ?? "price_only"),
+            "variant_type" => (string)($category["variant_type"] ?? ((int)($category["has_sizes"] ?? 0) === 1 ? "size" : "none")),
             "has_sizes" => (int)($category["has_sizes"] ?? 0) === 1,
             "quantity" => $category["quantity"] === null ? null : (int)$category["quantity"],
             "price" => number_format((float)$category["price"], 2, ".", ""),
@@ -455,12 +469,12 @@ function collectSalesInvoiceItems(array $categoryIds, array $sizeNames, array $q
         $invoiceItemSizeName = "";
         if (($category["has_sizes"] ?? false) === true) {
             if ($rawSizeName === "") {
-                return ["items" => [], "error" => "اختر المقاس المطلوب لكل صنف له مقاسات."];
+                return ["items" => [], "error" => "اختر الخيار المطلوب لكل صنف له تفاصيل."];
             }
 
             $matchingSizeNames = array_column($category["sizes"] ?? [], "size_name");
             if (!in_array($rawSizeName, $matchingSizeNames, true)) {
-                return ["items" => [], "error" => "المقاس المحدد غير متاح للصنف المختار."];
+                return ["items" => [], "error" => "الخيار المحدد غير متاح للصنف المختار."];
             }
 
             $invoiceItemSizeName = $rawSizeName;
@@ -468,7 +482,7 @@ function collectSalesInvoiceItems(array $categoryIds, array $sizeNames, array $q
 
         $itemUniqueKey = $categoryId . "|" . $invoiceItemSizeName;
         if (in_array($itemUniqueKey, $usedItemKeys, true)) {
-            return ["items" => [], "error" => "لا يمكن تكرار نفس الصنف والمقاس داخل الفاتورة الواحدة."];
+            return ["items" => [], "error" => "لا يمكن تكرار نفس الصنف والخيار داخل الفاتورة الواحدة."];
         }
 
         $usedItemKeys[] = $itemUniqueKey;
@@ -554,7 +568,7 @@ function lockSalesCategories(PDO $pdo, $gameId, array $categoryIds)
     }
 
     $sql =
-        "SELECT id, category_name, pricing_type, has_sizes, quantity, price
+        "SELECT id, category_name, pricing_type, variant_type, has_sizes, quantity, price
          FROM store_categories
          WHERE game_id = ? AND id IN (" . buildSalesLockPlaceholders($categoryIds) . ")
          FOR UPDATE";
@@ -568,6 +582,7 @@ function lockSalesCategories(PDO $pdo, $gameId, array $categoryIds)
             "id" => (int)$category["id"],
             "category_name" => (string)$category["category_name"],
             "pricing_type" => (string)($category["pricing_type"] ?? "price_only"),
+            "variant_type" => (string)($category["variant_type"] ?? ((int)($category["has_sizes"] ?? 0) === 1 ? "size" : "none")),
             "has_sizes" => (int)($category["has_sizes"] ?? 0) === 1,
             "quantity" => $category["quantity"] === null ? null : (int)$category["quantity"],
             "sizes" => [],
@@ -587,16 +602,15 @@ function lockSalesCategories(PDO $pdo, $gameId, array $categoryIds)
     $sizesStmt->execute(array_map("intval", array_keys($lockedCategories)));
     foreach ($sizesStmt->fetchAll() as $sizeRow) {
         $categoryId = (int)$sizeRow["category_id"];
-        $sizeName = (string)$sizeRow["size_name"];
-        if (trim((string)($sizeRow["color_name"] ?? "")) !== "") {
-            $sizeName .= " - " . trim((string)$sizeRow["color_name"]);
-        }
+        $sizeName = formatSalesVariantLabel($sizeRow["size_name"] ?? "", $sizeRow["color_name"] ?? "");
         if (!isset($lockedCategories[$categoryId])) {
             continue;
         }
 
         $lockedCategories[$categoryId]["sizes"][$sizeName] = [
             "size_name" => $sizeName,
+            "raw_size_name" => (string)($sizeRow["size_name"] ?? ""),
+            "raw_color_name" => (string)($sizeRow["color_name"] ?? ""),
             "quantity" => (int)$sizeRow["quantity"],
         ];
     }
@@ -639,12 +653,12 @@ function applySalesInventoryImpact(array &$lockedCategories, $invoiceType, array
         if (($lockedCategories[$categoryId]["has_sizes"] ?? false) === true) {
             $sizeName = trim((string)($item["size_name"] ?? ""));
             if ($sizeName === "" || !isset($lockedCategories[$categoryId]["sizes"][$sizeName])) {
-                return "أحد المقاسات المرتبطة بالصنف \"" . $lockedCategories[$categoryId]["category_name"] . "\" غير متاح الآن.";
+                return "أحد الخيارات المرتبطة بالصنف \"" . $lockedCategories[$categoryId]["category_name"] . "\" غير متاح الآن.";
             }
 
             $currentQuantity = (int)$lockedCategories[$categoryId]["sizes"][$sizeName]["quantity"];
             if (($currentQuantity + $delta) < 0) {
-                return "الكمية المتاحة لا تسمح بحفظ التعديل للمقاس \"" . $sizeName . "\" في الصنف \"" . $lockedCategories[$categoryId]["category_name"] . "\".";
+                return "الكمية المتاحة لا تسمح بحفظ التعديل للخيار \"" . $sizeName . "\" في الصنف \"" . $lockedCategories[$categoryId]["category_name"] . "\".";
             }
 
             $lockedCategories[$categoryId]["sizes"][$sizeName]["quantity"] = $currentQuantity + $delta;
@@ -674,7 +688,7 @@ function persistSalesCategoryQuantities(PDO $pdo, $gameId, array $lockedCategori
     $updateSizeStmt = $pdo->prepare(
         "UPDATE store_category_sizes
          SET quantity = ?
-         WHERE category_id = ? AND size_name = ?"
+         WHERE category_id = ? AND size_name = ? AND color_name = ?"
     );
 
     foreach ($lockedCategories as $categoryId => $category) {
@@ -687,7 +701,12 @@ function persistSalesCategoryQuantities(PDO $pdo, $gameId, array $lockedCategori
                 $originalSizeQuantity = $originalCategories[$categoryId]["sizes"][$sizeName]["quantity"] ?? null;
                 $newSizeQuantity = (int)$sizeRow["quantity"];
                 if ($originalSizeQuantity !== $newSizeQuantity) {
-                    $updateSizeStmt->execute([$newSizeQuantity, (int)$categoryId, (string)$sizeName]);
+                    $updateSizeStmt->execute([
+                        $newSizeQuantity,
+                        (int)$categoryId,
+                        (string)($sizeRow["raw_size_name"] ?? ""),
+                        (string)($sizeRow["raw_color_name"] ?? ""),
+                    ]);
                 }
             }
         }
@@ -1364,7 +1383,7 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                                         <thead>
                                             <tr>
                                                 <th>الصنف</th>
-                                                <th>المقاس</th>
+                                                <th>الخيار</th>
                                                 <th>الرصيد</th>
                                                 <th>الكمية</th>
                                                 <th>سعر الوحدة</th>
@@ -1393,9 +1412,9 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                                                             <?php endforeach; ?>
                                                         </select>
                                                     </td>
-                                                    <td data-label="المقاس">
+                                                    <td data-label="الخيار">
                                                         <select name="item_size_name[]" class="sales-item-size-select">
-                                                            <option value="">بدون مقاس</option>
+                                                            <option value="">بدون خيار</option>
                                                         </select>
                                                         <input type="hidden" class="sales-item-size-value" value="<?php echo htmlspecialchars((string)($itemRow["size_name"] ?? ""), ENT_QUOTES, "UTF-8"); ?>">
                                                     </td>
@@ -1558,9 +1577,9 @@ $invoices = fetchSalesInvoicesForDate($pdo, $currentGameId, $selectedDate, $sele
                 <?php endforeach; ?>
             </select>
         </td>
-        <td data-label="المقاس">
+        <td data-label="الخيار">
             <select name="item_size_name[]" class="sales-item-size-select">
-                <option value="">بدون مقاس</option>
+                <option value="">بدون خيار</option>
             </select>
             <input type="hidden" class="sales-item-size-value" value="">
         </td>
@@ -1640,7 +1659,7 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!selectedOption || !selectedOption.value || selectedOption.dataset.hasSizes !== "1") {
             const emptyOption = document.createElement("option");
             emptyOption.value = "";
-            emptyOption.textContent = "بدون مقاس";
+            emptyOption.textContent = "بدون خيار";
             sizeSelectElement.appendChild(emptyOption);
             sizeSelectElement.required = false;
             sizeSelectElement.disabled = true;
@@ -1653,7 +1672,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const defaultOption = document.createElement("option");
         defaultOption.value = "";
-        defaultOption.textContent = "اختر المقاس";
+        defaultOption.textContent = "اختر الخيار";
         sizeSelectElement.appendChild(defaultOption);
 
         readSizes(selectedOption).forEach(function (sizeRow) {
@@ -1701,13 +1720,13 @@ document.addEventListener("DOMContentLoaded", function () {
             stockElement.classList.remove("is-stocked");
         } else if (hasSizes) {
             if (!selectedSizeOption || !selectedSizeOption.value) {
-                stockElement.textContent = "اختر المقاس";
+                stockElement.textContent = "اختر الخيار";
                 stockElement.classList.remove("is-stocked");
             } else if (isStockManaged) {
                 stockElement.textContent = "الرصيد: " + (sizeStockValue === "" ? "0" : sizeStockValue);
                 stockElement.classList.add("is-stocked");
             } else {
-                stockElement.textContent = "المقاس متاح";
+                stockElement.textContent = "الخيار متاح";
                 stockElement.classList.remove("is-stocked");
             }
         } else if (isStockManaged) {
