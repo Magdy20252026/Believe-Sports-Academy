@@ -170,7 +170,9 @@ try {
                 p.training_days_per_week, p.total_training_days, p.total_trainings,
                 p.trainer_name, p.training_time, p.training_day_keys,
                 p.subscription_price, p.paid_amount,
-                g.name AS game_name, sg.group_name AS sg_group_name, sg.group_level AS sg_group_level
+                g.name AS game_name, sg.group_name AS sg_group_name, sg.group_level AS sg_group_level,
+                sg.trainer_name AS sg_trainer_name, sg.training_time AS sg_training_time,
+                sg.training_day_keys AS sg_training_day_keys, sg.training_day_times AS sg_training_day_times
          FROM players p
          LEFT JOIN games g ON g.id = p.game_id
          LEFT JOIN sports_groups sg ON sg.id = p.group_id
@@ -344,15 +346,26 @@ function pportPriority($p) {
     return $map[(string)$p] ?? ["—", "pp-badge-muted"];
 }
 
-$dayLabels = [
-    "saturday" => "السبت", "sunday" => "الأحد", "monday" => "الإثنين",
-    "tuesday" => "الثلاثاء", "wednesday" => "الأربعاء", "thursday" => "الخميس", "friday" => "الجمعة",
-];
-$trainingDays = [];
-foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
-    $key = trim($key);
-    if (isset($dayLabels[$key])) $trainingDays[] = $dayLabels[$key];
-}
+$playerTrainingDayKeys = getPlayerTrainingDayKeys($player["training_day_keys"] ?? "");
+$playerTrainingDayTimes = decodePlayerScheduleDayTimes(
+    '',
+    $playerTrainingDayKeys,
+    $player["training_time"] ?? ''
+);
+$groupTrainingDayKeys = getPlayerTrainingDayKeys($player["sg_training_day_keys"] ?? "");
+$groupTrainingDayTimes = decodePlayerScheduleDayTimes(
+    $player["sg_training_day_times"] ?? '',
+    $groupTrainingDayKeys,
+    $player["sg_training_time"] ?? ''
+);
+$effectiveTrainingDayKeys = count($groupTrainingDayKeys) > 0 ? $groupTrainingDayKeys : $playerTrainingDayKeys;
+$effectiveTrainingDayTimes = count($groupTrainingDayTimes) > 0 ? $groupTrainingDayTimes : $playerTrainingDayTimes;
+$trainingDays = formatPlayerTrainingDaysLabel($effectiveTrainingDayKeys);
+$trainingScheduleLabels = formatPlayerTrainingScheduleLabels($effectiveTrainingDayKeys, $effectiveTrainingDayTimes);
+$primaryTrainingTime = getPrimaryPlayerScheduleTime($effectiveTrainingDayKeys, $effectiveTrainingDayTimes);
+$displayTrainerName = trim((string)($player["sg_trainer_name"] ?? "")) !== ''
+    ? trim((string)$player["sg_trainer_name"])
+    : trim((string)($player["trainer_name"] ?? ""));
 ?>
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -790,7 +803,7 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
                             <?php if ($playerSpecificLevel !== ""): ?>
                                 <div class="pp-info-item"><div class="pp-info-lbl">مستوى اللاعب</div><div class="pp-info-val"><?php echo pportEsc($playerSpecificLevel); ?></div></div>
                             <?php endif; ?>
-                            <div class="pp-info-item"><div class="pp-info-lbl">المدرب</div><div class="pp-info-val"><?php echo pportEsc($player["trainer_name"] !== "" ? $player["trainer_name"] : "—"); ?></div></div>
+                            <div class="pp-info-item"><div class="pp-info-lbl">المدرب</div><div class="pp-info-val"><?php echo pportEsc($displayTrainerName !== "" ? $displayTrainerName : "—"); ?></div></div>
                             <div class="pp-info-item"><div class="pp-info-lbl">الفئة</div><div class="pp-info-val"><?php echo pportEsc($player["player_category"] ?? "—"); ?></div></div>
                             <div class="pp-info-item"><div class="pp-info-lbl">تاريخ الميلاد</div><div class="pp-info-val"><?php echo pportFmtDate($player["birth_date"] ?? ""); ?></div></div>
                             <?php if ((int)$player["player_age"] > 0): ?>
@@ -801,8 +814,10 @@ foreach (explode(",", (string)($player["training_day_keys"] ?? "")) as $key) {
                             <?php if (count($trainingDays) > 0): ?>
                                 <div class="pp-info-item"><div class="pp-info-lbl">أيام التدريب</div><div class="pp-info-val"><?php echo pportEsc(implode("، ", $trainingDays)); ?></div></div>
                             <?php endif; ?>
-                            <?php if (!empty($player["training_time"])): ?>
-                                <div class="pp-info-item"><div class="pp-info-lbl">موعد التمرين</div><div class="pp-info-val" dir="ltr"><?php echo pportEsc(pportFmtTime($player["training_time"])); ?></div></div>
+                            <?php if (count($trainingScheduleLabels) > 0): ?>
+                                <div class="pp-info-item"><div class="pp-info-lbl">مواعيد التمرين</div><div class="pp-info-val"><?php echo pportEsc(implode("، ", $trainingScheduleLabels)); ?></div></div>
+                            <?php elseif ($primaryTrainingTime !== ''): ?>
+                                <div class="pp-info-item"><div class="pp-info-lbl">موعد التمرين</div><div class="pp-info-val" dir="ltr"><?php echo pportEsc(pportFmtTime($primaryTrainingTime)); ?></div></div>
                             <?php endif; ?>
                             <div class="pp-info-item"><div class="pp-info-lbl">إجمالي التمارين</div><div class="pp-info-val"><?php echo (int)$player["total_trainings"]; ?></div></div>
                             <div class="pp-info-item"><div class="pp-info-lbl">قيمة الاشتراك</div><div class="pp-info-val"><?php echo pportFmtCurrency($player["subscription_price"]); ?></div></div>
