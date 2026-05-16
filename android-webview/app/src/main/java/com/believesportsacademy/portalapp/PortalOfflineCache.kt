@@ -1,6 +1,7 @@
 package com.believesportsacademy.portalapp
 
 import android.content.Context
+import android.os.Build
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -19,12 +20,28 @@ internal object PortalOfflineCache {
             val connectivityManager = context.getSystemService(ConnectivityManager::class.java) ?: return false
             val activeNetwork = connectivityManager.activeNetwork ?: return false
             val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
-                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED)
+            if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                return false
+            }
+
+            if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                return true
+            }
+
+            hasSupportedTransport(capabilities) &&
+                (Build.VERSION.SDK_INT < Build.VERSION_CODES.P ||
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED))
         } catch (_: SecurityException) {
             false
         }
+    }
+
+    private fun hasSupportedTransport(capabilities: NetworkCapabilities): Boolean {
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ||
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH)
     }
 
     fun lastSyncedUrl(context: Context): String? {
