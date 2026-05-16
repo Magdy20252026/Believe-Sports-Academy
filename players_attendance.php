@@ -4,6 +4,7 @@ startSecureSession();
 require_once "config.php";
 require_once "navigation.php";
 require_once "players_support.php";
+require_once "schedule_exceptions_support.php";
 
 date_default_timezone_set("Africa/Cairo");
 
@@ -24,6 +25,9 @@ function formatPlayerAttendanceStatusBadgeClass($status)
     }
     if ($status === PLAYER_ATTENDANCE_STATUS_ABSENT) {
         return "status-danger";
+    }
+    if ($status === PLAYER_ATTENDANCE_STATUS_EMERGENCY_LEAVE) {
+        return "status-warning";
     }
 
     return "status-neutral";
@@ -58,6 +62,7 @@ function buildPlayerAttendanceDaySignature(array $dayKeys)
 function fetchPlayerAttendanceSnapshots(PDO $pdo, $gameId)
 {
     $presentStatus = PLAYER_ATTENDANCE_STATUS_PRESENT;
+    $emergencyLeaveStatus = PLAYER_ATTENDANCE_STATUS_EMERGENCY_LEAVE;
     $stmt = $pdo->prepare(
         "SELECT
             p.id,
@@ -80,7 +85,13 @@ function fetchPlayerAttendanceSnapshots(PDO $pdo, $gameId)
             p.training_day_keys,
             p.training_time,
             p.created_at,
-            COUNT(pa.id) AS consumed_sessions_count,
+            COALESCE(SUM(
+                CASE
+                    WHEN COALESCE(NULLIF(pa.attendance_status, ''), ?) <> ?
+                    THEN 1
+                    ELSE 0
+                END
+            ), 0) AS consumed_sessions_count,
             SUM(
                 CASE
                     WHEN COALESCE(NULLIF(pa.attendance_status, ''), ?) = ?
@@ -115,7 +126,7 @@ function fetchPlayerAttendanceSnapshots(PDO $pdo, $gameId)
             p.created_at
          ORDER BY p.name ASC, p.id ASC"
     );
-    $stmt->execute([$presentStatus, $presentStatus, (int)$gameId]);
+    $stmt->execute([$presentStatus, $emergencyLeaveStatus, $presentStatus, $presentStatus, (int)$gameId]);
 
     return $stmt->fetchAll();
 }
@@ -188,26 +199,66 @@ function applyPlayerAttendanceGroupSchedules(array $player, array $groupSchedule
         }
         $player["training_schedule_times"] = $groupDayTimes;
     }
+    $player["schedule_exceptions"] = $groupSchedule["exception_dates"] ?? [];
 
     return $player;
 }
 
-function getPlayerAttendanceScheduledTimeForDate(array $player, DateTimeImmutable $date)
+function resolvePlayerAttendanceScheduleForDate(array $player, DateTimeImmutable $date)
 {
-    $dayKey = getPlayerAttendanceDayKeyFromDate($date);
-    $scheduleTimes = $player["training_schedule_times"] ?? [];
-    if (is_array($scheduleTimes)) {
-        $scheduledTime = normalizeTrainingTimeValue($scheduleTimes[$dayKey] ?? "");
-        if ($scheduledTime !== "") {
-            return $scheduledTime;
+    $dateKey = $date->format("Y-m-d");
+    $exceptionMap = $player["schedule_exceptions"] ?? [];
+    if (is_array($exceptionMap) && isset($exceptionMap["replacement_dates"][$dateKey])) {
+        $row = $exceptionMap["replacement_dates"][$dateKey];
+        return [
+            "is_scheduled" => true,
+            "time" => normalizeTrainingTimeValue($row["replacement_start_time"] ?? ""),
+            "type" => "replacement",
+            "row" => $row,
+        ];
+    }
+
+    if (is_array($exceptionMap) && isset($exceptionMap["original_dates"][$dateKey])) {
+        $row = $exceptionMap["original_dates"][$dateKey];
+        if ((int)($row["apply_players_leave"] ?? 0) === 1) {
+            return [
+                "is_scheduled" => false,
+                "time" => "",
+                "type" => "leave",
+                "row" => $row,
+            ];
         }
     }
 
-    return normalizeTrainingTimeValue($player["training_time"] ?? "");
+    $dayKey = getPlayerAttendanceDayKeyFromDate($date);
+    $scheduleTimes = $player["training_schedule_times"] ?? [];
+    $scheduledTime = "";
+    if (is_array($scheduleTimes)) {
+        $scheduledTime = normalizeTrainingTimeValue($scheduleTimes[$dayKey] ?? "");
+    }
+    if ($scheduledTime === "") {
+        $scheduledTime = normalizeTrainingTimeValue($player["training_time"] ?? "");
+    }
+
+    return [
+        "is_scheduled" => in_array($dayKey, $player["training_day_keys_list"] ?? [], true),
+        "time" => $scheduledTime,
+        "type" => "default",
+        "row" => null,
+    ];
 }
 
-function isPlayerAttendanceScheduledForDay(array $player, $dayKey)
+function getPlayerAttendanceScheduledTimeForDate(array $player, DateTimeImmutable $date)
 {
+    return (string)(resolvePlayerAttendanceScheduleForDate($player, $date)["time"] ?? "");
+}
+
+function isPlayerAttendanceScheduledForDay(array $player, $dayKey, DateTimeImmutable $date = null)
+{
+    if ($date instanceof DateTimeImmutable) {
+        return (bool)(resolvePlayerAttendanceScheduleForDate($player, $date)["is_scheduled"] ?? false);
+    }
+
     return in_array($dayKey, $player["training_day_keys_list"] ?? [], true);
 }
 
@@ -317,12 +368,13 @@ function buildPlayerAttendanceLateNotificationMessage(array $player, DateTimeImm
 
 function canPlayerReceiveAttendanceMark(array $player, DateTimeImmutable $today, $dayKey, $allowExistingTodayRecord = false)
 {
+    $resolvedSchedule = resolvePlayerAttendanceScheduleForDate($player, $today);
     $startDate = trim((string)($player["subscription_start_date"] ?? ""));
     if (!isValidPlayerDate($startDate) || createPlayerDate($startDate) > $today) {
         return false;
     }
 
-    if (!isPlayerAttendanceScheduledForDay($player, $dayKey)) {
+    if (!$resolvedSchedule["is_scheduled"]) {
         return false;
     }
 
@@ -339,12 +391,17 @@ function canPlayerReceiveAttendanceMark(array $player, DateTimeImmutable $today,
 
 function getPlayerAttendanceBlockMessage(array $player, DateTimeImmutable $today, $dayKey, $existingRecord = null, $allowOffSchedule = false)
 {
+    $resolvedSchedule = resolvePlayerAttendanceScheduleForDate($player, $today);
     $startDate = trim((string)($player["subscription_start_date"] ?? ""));
     if (!isValidPlayerDate($startDate) || createPlayerDate($startDate) > $today) {
         return "اشتراك اللاعب لم يبدأ بعد.";
     }
 
-    if (!$allowOffSchedule && !isPlayerAttendanceScheduledForDay($player, $dayKey)) {
+    if (($resolvedSchedule["type"] ?? "") === "leave") {
+        return "اليوم مسجل للاعب كإجازة طارئة.";
+    }
+
+    if (!$allowOffSchedule && !$resolvedSchedule["is_scheduled"]) {
         return "اليوم ليس من أيام تمرين اللاعب.";
     }
 
@@ -427,7 +484,7 @@ function syncPlayerAbsenceRows(PDO $pdo, $gameId, array $playersById, DateTimeIm
 
         $cursor = createPlayerDate($startDateValue);
         $endDate = createPlayerDate($endDateValue);
-        $lastDate = $endDate < $yesterday ? $endDate : $yesterday;
+        $lastDate = $endDate < $today ? $endDate : $today;
         if ($cursor > $lastDate) {
             continue;
         }
@@ -435,8 +492,16 @@ function syncPlayerAbsenceRows(PDO $pdo, $gameId, array $playersById, DateTimeIm
         while ($cursor <= $lastDate && $remainingTrainings > 0) {
             $attendanceDate = $cursor->format("Y-m-d");
             $dayKey = getPlayerAttendanceDayKeyFromDate($cursor);
+            $resolvedSchedule = resolvePlayerAttendanceScheduleForDate($player, $cursor);
+            $attendanceStatus = PLAYER_ATTENDANCE_STATUS_ABSENT;
+            if (($resolvedSchedule["type"] ?? "") === "leave") {
+                $attendanceStatus = PLAYER_ATTENDANCE_STATUS_EMERGENCY_LEAVE;
+            }
             if (
-                in_array($dayKey, $trainingDayKeys, true)
+                (
+                    (($resolvedSchedule["type"] ?? "") === "leave")
+                    || ($resolvedSchedule["is_scheduled"])
+                )
                 && empty($existingRows[$playerId][$attendanceDate])
             ) {
                 $rowsToInsert[] = [
@@ -444,10 +509,12 @@ function syncPlayerAbsenceRows(PDO $pdo, $gameId, array $playersById, DateTimeIm
                     $playerId,
                     $attendanceDate,
                     $dayKey,
-                    PLAYER_ATTENDANCE_STATUS_ABSENT,
+                    $attendanceStatus,
                     PLAYER_ATTENDANCE_DEFAULT_MINUTES_LATE,
                 ];
-                $remainingTrainings--;
+                if ($attendanceStatus !== PLAYER_ATTENDANCE_STATUS_EMERGENCY_LEAVE) {
+                    $remainingTrainings--;
+                }
             }
 
             $cursor = $cursor->modify("+1 day");
@@ -1080,7 +1147,7 @@ function handlePlayerAttendanceScan(PDO $pdo, array $player, array $playersById,
     $today = new DateTimeImmutable($now->format("Y-m-d") . " 00:00:00", new DateTimeZone("Africa/Cairo"));
     $todayDate = $today->format("Y-m-d");
     $dayKey = getPlayerAttendanceDayKeyFromDate($today);
-    $isScheduledDay = isPlayerAttendanceScheduledForDay($player, $dayKey);
+    $isScheduledDay = isPlayerAttendanceScheduledForDay($player, $dayKey, $today);
     $attendanceMinutesLate = $isScheduledDay ? calculatePlayerAttendanceMinutesLate($player, $now, $today) : 0;
 
     $pdo->beginTransaction();
@@ -1236,6 +1303,8 @@ $groupsStmt = $pdo->prepare(
 );
 $groupsStmt->execute([$currentGameId]);
 $groups = $groupsStmt->fetchAll();
+$scheduleExceptionRows = fetchScheduleExceptionRows($pdo, $currentGameId);
+$groupScheduleExceptionMap = buildGroupScheduleExceptionMap($scheduleExceptionRows);
 $groupPlayerCounts = fetchGroupPlayerCounts($pdo, $currentGameId);
 $availableLevels = [];
 $availableDaysCounts = [];
@@ -1257,6 +1326,8 @@ foreach ($groups as &$group) {
     $groupScheduleMap[$groupId] = [
         "training_day_keys_list" => $group["training_day_keys_list"],
         "training_day_times_map" => $group["training_day_times_map"],
+        "training_time" => $group["training_time"] ?? "",
+        "exception_dates" => $groupScheduleExceptionMap[$groupId] ?? [],
     ];
 
     $groupLevel = trim((string)($group["group_level"] ?? ""));

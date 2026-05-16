@@ -6,6 +6,7 @@ function getApplicationNavigationItems()
                 ["key" => "users", "label" => "👥 المستخدمين", "href" => "users.php", "tone" => "tone-cyan", "assignable" => true, "manager_only" => false, "show_on_dashboard" => true],
                 ["key" => "user-permissions", "label" => "🛡️ صلاحيات المستخدمين", "href" => "user_permissions.php", "tone" => "tone-violet", "assignable" => false, "manager_only" => true, "show_on_dashboard" => true],
                 ["key" => "groups", "label" => "🏘️ المجموعات", "href" => "groups.php", "tone" => "tone-teal", "assignable" => true, "manager_only" => false, "show_on_dashboard" => true],
+                ["key" => "emergency-schedule", "label" => "🚨 الطوارئ", "href" => "emergency_schedule.php", "tone" => "tone-rose", "assignable" => true, "manager_only" => false, "show_on_dashboard" => true],
                 ["key" => "player-seating", "label" => "🪑 تسكين لاعبين", "href" => "player_seating.php", "tone" => "tone-teal", "assignable" => true, "manager_only" => false, "show_on_dashboard" => true],
                 ["key" => "players", "label" => "⚽ اللاعبين", "href" => "players.php", "tone" => "tone-indigo", "assignable" => true, "manager_only" => false, "show_on_dashboard" => true],
                 ["key" => "players-attendance", "label" => "✅ حضور اللاعبين", "href" => "players_attendance.php", "tone" => "tone-green", "assignable" => true, "manager_only" => false, "show_on_dashboard" => true],
