@@ -135,6 +135,24 @@ function buildPlayerAttendanceSnapshot(array $player, DateTimeImmutable $today)
     $dayKeys = $isStandaloneSingleTraining
         ? []
         : getPlayerTrainingDayKeys($player["training_day_keys"] ?? "");
+    $scheduleTimes = [];
+    if (!$isStandaloneSingleTraining) {
+        $existingScheduleTimes = $player["training_schedule_times"] ?? [];
+        if (is_array($existingScheduleTimes) && count($existingScheduleTimes) > 0) {
+            foreach ($dayKeys as $dayKey) {
+                $normalizedTime = normalizeTrainingTimeValue($existingScheduleTimes[$dayKey] ?? "");
+                if ($normalizedTime !== "") {
+                    $scheduleTimes[$dayKey] = $normalizedTime;
+                }
+            }
+        }
+        if (count($scheduleTimes) === 0) {
+            $scheduleTimes = decodePlayerScheduleDayTimes("", $dayKeys, $player["training_time"] ?? "");
+        }
+    }
+    $scheduleLabels = $isStandaloneSingleTraining
+        ? [PLAYER_ATTENDANCE_SINGLE_TRAINING_LABEL]
+        : formatPlayerTrainingScheduleLabels($dayKeys, $scheduleTimes);
 
     $player["attendance_count"] = $attendanceCount;
     $player["consumed_sessions_count"] = $consumedSessionsCount;
@@ -143,9 +161,49 @@ function buildPlayerAttendanceSnapshot(array $player, DateTimeImmutable $today)
     $player["status"] = $isStandaloneSingleTraining ? PLAYER_ATTENDANCE_SINGLE_TRAINING_LABEL : getPlayerSubscriptionStatus($daysRemaining, $remainingTrainings);
     $player["training_day_keys_list"] = $dayKeys;
     $player["training_day_labels"] = $isStandaloneSingleTraining ? [PLAYER_ATTENDANCE_SINGLE_TRAINING_LABEL] : formatPlayerTrainingDaysLabel($dayKeys);
+    $player["training_schedule_times"] = $scheduleTimes;
+    $player["training_schedule_labels"] = $scheduleLabels;
     $player["training_day_signature"] = buildPlayerAttendanceDaySignature($dayKeys);
 
     return $player;
+}
+
+function applyPlayerAttendanceGroupSchedules(array $player, array $groupScheduleMap)
+{
+    $groupId = (int)($player["group_id"] ?? 0);
+    if ($groupId <= 0 || !isset($groupScheduleMap[$groupId]) || !is_array($groupScheduleMap[$groupId])) {
+        return $player;
+    }
+
+    $groupSchedule = $groupScheduleMap[$groupId];
+    $groupDayKeys = $groupSchedule["training_day_keys_list"] ?? [];
+    $groupDayTimes = $groupSchedule["training_day_times_map"] ?? [];
+    if (count($groupDayKeys) > 0) {
+        $player["training_day_keys"] = buildPlayerAttendanceDaySignature($groupDayKeys);
+    }
+    if (count($groupDayTimes) > 0) {
+        $primaryScheduleTime = getPrimaryPlayerScheduleTime($groupDayKeys, $groupDayTimes);
+        if ($primaryScheduleTime !== "") {
+            $player["training_time"] = $primaryScheduleTime;
+        }
+        $player["training_schedule_times"] = $groupDayTimes;
+    }
+
+    return $player;
+}
+
+function getPlayerAttendanceScheduledTimeForDate(array $player, DateTimeImmutable $date)
+{
+    $dayKey = getPlayerAttendanceDayKeyFromDate($date);
+    $scheduleTimes = $player["training_schedule_times"] ?? [];
+    if (is_array($scheduleTimes)) {
+        $scheduledTime = normalizeTrainingTimeValue($scheduleTimes[$dayKey] ?? "");
+        if ($scheduledTime !== "") {
+            return $scheduledTime;
+        }
+    }
+
+    return normalizeTrainingTimeValue($player["training_time"] ?? "");
 }
 
 function isPlayerAttendanceScheduledForDay(array $player, $dayKey)
@@ -155,21 +213,20 @@ function isPlayerAttendanceScheduledForDay(array $player, $dayKey)
 
 function buildPlayerAttendanceOffScheduleNotice(array $player, $dayKey)
 {
-    $trainingDayLabels = $player["training_day_labels"] ?? [];
-    $scheduledDaysLabel = count($trainingDayLabels) > 0
-        ? implode(" - ", $trainingDayLabels)
-        : "غير محددة";
-    $scheduledTimeLabel = formatTrainingTimeDisplay($player["training_time"] ?? "");
-    $scheduledTimeMessage = $scheduledTimeLabel !== ""
-        ? " وميعاده المسجل " . $scheduledTimeLabel
-        : "";
+    $trainingScheduleLabels = $player["training_schedule_labels"] ?? [];
+    $scheduledLabel = count($trainingScheduleLabels) > 0
+        ? implode(" - ", $trainingScheduleLabels)
+        : implode(" - ", $player["training_day_labels"] ?? []);
+    if ($scheduledLabel === "") {
+        $scheduledLabel = "غير محددة";
+    }
 
-    return "تنبيه: هذا ليس ميعاد تمرين اللاعب. أيام التمرين المسجلة له هي (" . $scheduledDaysLabel . ")" . $scheduledTimeMessage . ".";
+    return "تنبيه: هذا ليس ميعاد تمرين اللاعب. المواعيد المسجلة له هي (" . $scheduledLabel . ").";
 }
 
 function buildPlayerAttendanceWrongTimeNotice(array $player, DateTimeImmutable $now)
 {
-    $scheduledTimeValue = formatTrainingTimeLabel($player["training_time"] ?? "");
+    $scheduledTimeValue = formatTrainingTimeLabel(getPlayerAttendanceScheduledTimeForDate($player, $now));
     if ($scheduledTimeValue === "") {
         return "";
     }
@@ -187,7 +244,7 @@ function buildPlayerAttendanceWrongTimeNotice(array $player, DateTimeImmutable $
 
 function getPlayerAttendanceLateCutoffDateTime(array $player, DateTimeImmutable $today)
 {
-    $trainingTime = normalizeTrainingTimeValue($player["training_time"] ?? "");
+    $trainingTime = getPlayerAttendanceScheduledTimeForDate($player, $today);
     if ($trainingTime === "") {
         return null;
     }
@@ -207,7 +264,7 @@ function getPlayerAttendanceLateCutoffDateTime(array $player, DateTimeImmutable 
 function buildPlayerAttendanceLateBlockMessage(array $player, DateTimeImmutable $lateCutoff)
 {
     $playerName = trim((string)($player["name"] ?? ""));
-    $trainingTimeLabel = formatTrainingTimeDisplay($player["training_time"] ?? "");
+    $trainingTimeLabel = formatTrainingTimeDisplay(getPlayerAttendanceScheduledTimeForDate($player, $lateCutoff));
     $lateCutoffLabel = formatTrainingTimeDisplay($lateCutoff->format("H:i:s"));
     $playerNameLabel = $playerName !== "" ? " للاعب " . $playerName : "";
 
@@ -220,7 +277,7 @@ function buildPlayerAttendanceLateBlockMessage(array $player, DateTimeImmutable 
 
 function calculatePlayerAttendanceMinutesLate(array $player, DateTimeImmutable $now, DateTimeImmutable $today)
 {
-    $trainingTime = normalizeTrainingTimeValue($player["training_time"] ?? "");
+    $trainingTime = getPlayerAttendanceScheduledTimeForDate($player, $today);
     if ($trainingTime === "") {
         return 0;
     }
@@ -250,7 +307,7 @@ function buildPlayerAttendanceLateNotificationMessage(array $player, DateTimeImm
         "عدد دقائق التأخير: " . $minutesLate . " دقيقة.",
     ];
 
-    $trainingTimeLabel = formatTrainingTimeDisplay($player["training_time"] ?? "");
+    $trainingTimeLabel = formatTrainingTimeDisplay(getPlayerAttendanceScheduledTimeForDate($player, $attendanceDate));
     if ($trainingTimeLabel !== "") {
         $messageLines[] = "موعد التمرين: " . $trainingTimeLabel . ".";
     }
@@ -1172,7 +1229,7 @@ $today = new DateTimeImmutable("today", new DateTimeZone("Africa/Cairo"));
 $egyptDateTimeLabel = formatPlayerAttendanceDateTimeLabel($now);
 
 $groupsStmt = $pdo->prepare(
-    "SELECT id, group_name, group_level, max_players, trainer_name, training_days_count, training_day_keys, training_time
+    "SELECT id, group_name, group_level, max_players, trainer_name, training_days_count, training_day_keys, training_time, training_day_times
      FROM sports_groups
      WHERE game_id = ?
      ORDER BY group_level ASC, group_name ASC, id ASC"
@@ -1185,11 +1242,22 @@ $availableDaysCounts = [];
 $availableTimes = [];
 $availableTrainers = [];
 $groupStatusMap = [];
+$groupScheduleMap = [];
 foreach ($groups as &$group) {
     $groupId = (int)($group["id"] ?? 0);
     $group["current_players_count"] = $groupPlayerCounts[$groupId] ?? 0;
     $group["can_add_players"] = playerGroupHasAvailableSlot($group);
     $groupStatusMap[$groupId] = (bool)$group["can_add_players"];
+    $group["training_day_keys_list"] = getPlayerTrainingDayKeys($group["training_day_keys"] ?? "");
+    $group["training_day_times_map"] = decodePlayerScheduleDayTimes(
+        $group["training_day_times"] ?? "",
+        $group["training_day_keys_list"],
+        $group["training_time"] ?? ""
+    );
+    $groupScheduleMap[$groupId] = [
+        "training_day_keys_list" => $group["training_day_keys_list"],
+        "training_day_times_map" => $group["training_day_times_map"],
+    ];
 
     $groupLevel = trim((string)($group["group_level"] ?? ""));
     if ($groupLevel !== "") {
@@ -1201,7 +1269,9 @@ foreach ($groups as &$group) {
         $availableDaysCounts[$daysCount] = $daysCount;
     }
 
-    $trainingTime = normalizeAttendanceHourFilterValue($group["training_time"] ?? "");
+    $trainingTime = normalizeAttendanceHourFilterValue(
+        getPrimaryPlayerScheduleTime($group["training_day_keys_list"], $group["training_day_times_map"])
+    );
     if ($trainingTime !== "") {
         $availableTimes[$trainingTime] = $trainingTime;
     }
@@ -1233,7 +1303,7 @@ $players = [];
 $playersById = [];
 $playersByBarcode = [];
 foreach (fetchPlayerAttendanceSnapshots($pdo, $currentGameId) as $playerRow) {
-    $snapshot = buildPlayerAttendanceSnapshot($playerRow, $today);
+    $snapshot = buildPlayerAttendanceSnapshot(applyPlayerAttendanceGroupSchedules($playerRow, $groupScheduleMap), $today);
     $players[] = $snapshot;
     $playersById[(int)$snapshot["id"]] = $snapshot;
     if (trim((string)$snapshot["barcode"]) !== "") {
@@ -1246,7 +1316,7 @@ if (syncPlayerAbsenceRows($pdo, $currentGameId, $playersById, $today)) {
     $playersById = [];
     $playersByBarcode = [];
     foreach (fetchPlayerAttendanceSnapshots($pdo, $currentGameId) as $playerRow) {
-        $snapshot = buildPlayerAttendanceSnapshot($playerRow, $today);
+        $snapshot = buildPlayerAttendanceSnapshot(applyPlayerAttendanceGroupSchedules($playerRow, $groupScheduleMap), $today);
         $players[] = $snapshot;
         $playersById[(int)$snapshot["id"]] = $snapshot;
         if (trim((string)$snapshot["barcode"]) !== "") {
@@ -1438,14 +1508,14 @@ $attendanceGroupFilters = [
 
 $records = [];
 foreach (fetchPlayerAttendanceRecords($pdo, $currentGameId, $dateFrom, $dateTo, $selectedGroupId, $statusFilter, $searchTerm, $timeFrom, $timeTo) as $recordRow) {
-    $record = buildPlayerAttendanceSnapshot($recordRow, $today);
+    $record = buildPlayerAttendanceSnapshot(applyPlayerAttendanceGroupSchedules($recordRow, $groupScheduleMap), $today);
     if (!matchesPlayerAttendanceGroupFilters($record, $attendanceGroupFilters, $groupStatusMap)) {
         continue;
     }
     $records[] = attachPlayerAttendanceSortTimestamp($record);
 }
 foreach (fetchSingleTrainingAttendanceLogRecords($pdo, $currentGameId, $dateFrom, $dateTo, $selectedGroupId, $statusFilter, $searchTerm, $timeFrom, $timeTo) as $recordRow) {
-    $record = buildPlayerAttendanceSnapshot($recordRow, $today);
+    $record = buildPlayerAttendanceSnapshot(applyPlayerAttendanceGroupSchedules($recordRow, $groupScheduleMap), $today);
     if (!matchesPlayerAttendanceGroupFilters($record, $attendanceGroupFilters, $groupStatusMap)) {
         continue;
     }
